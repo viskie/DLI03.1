@@ -27,6 +27,20 @@
     });
   });
 
+  document.querySelectorAll('[data-demo-sso]').forEach(function (button) {
+    button.addEventListener('click', function () {
+      const provider = button.dataset.demoSso;
+      saveProfile({
+        firstName: provider,
+        lastName: 'Evaluator',
+        email: 'sandbox@' + provider.toLowerCase() + '.example',
+        organization: provider + ' SSO demo',
+        role: 'Protocol engineer'
+      });
+      window.location.href = 'sandbox-dashboard.html';
+    });
+  });
+
   const views = Array.from(document.querySelectorAll('[data-view]'));
   if (!views.length) return;
   const links = Array.from(document.querySelectorAll('[data-view-link]'));

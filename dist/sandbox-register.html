@@ -23,6 +23,11 @@
       <span class="section-kicker">GET STARTED</span>
       <h2 id="register-title">Create your account</h2>
       <p class="auth-copy">This creates a temporary profile in your browser for the sample dashboard.</p>
+      <div class="sso-options" aria-label="Single sign-on options">
+        <button class="sso-button" type="button" data-demo-sso="Google"><span class="sso-google" aria-hidden="true">G</span>Continue with Google</button>
+        <button class="sso-button" type="button" data-demo-sso="GitHub"><span class="sso-github" aria-hidden="true">⌘</span>Continue with GitHub</button>
+      </div>
+      <div class="form-divider"><span>OR REGISTER WITH EMAIL</span></div>
       <form class="sandbox-form" data-demo-auth="register">
         <div class="field-pair"><div><label for="first-name">First name</label><input id="first-name" name="firstName" autocomplete="given-name" placeholder="Alex" required></div><div><label for="last-name">Last name</label><input id="last-name" name="lastName" autocomplete="family-name" placeholder="Morgan" required></div></div>
         <label for="register-email">Work email</label>
@@ -35,7 +40,7 @@
         <button class="auth-button" type="submit">Create account <span>↗</span></button>
       </form>
       <p class="auth-switch">Already registered? <a href="sandbox-login.html">Sign in</a></p>
-      <p class="demo-note">Demo only. Your sample profile stays in this browser and can be cleared at any time.</p>
+      <p class="demo-note">Demo only. SSO buttons simulate authorization without contacting Google or GitHub. Your sample profile stays in this browser and can be cleared at any time.</p>
     </section>
   </main>
   <script src="sandbox.js"></script>
