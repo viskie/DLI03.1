@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Create Sandbox Account — Delta Lateral Indices</title>
+  <meta name="description" content="Create a Delta Lateral Indices sandbox profile and explore the sample dashboard.">
+  <meta name="theme-color" content="#101817"><link rel="stylesheet" href="style.css"><link rel="stylesheet" href="sandbox.css">
+</head>
+<body class="auth-body">
+  <header class="sandbox-header wrap">
+    <a class="brand" href="index.html" aria-label="Delta Lateral Indices home"><span class="mark">Δ</span><span>DELTA LATERAL<br>INDICES</span></a>
+    <a class="back-link" href="product.html">← Back to plans</a>
+  </header>
+  <main class="auth-shell wrap">
+    <section class="auth-intro">
+      <span class="eyebrow"><span class="small-line"></span> CREATE ACCOUNT</span>
+      <h1>Your first look<br><em>at what is next.</em></h1>
+      <p>Create a local demo profile and step into a representative workspace for predictive oracle evaluation.</p>
+      <div class="auth-stat"><span>SANDBOX INCLUDES</span><strong>Delayed feeds · API examples · Usage view</strong></div>
+    </section>
+    <section class="auth-card" aria-labelledby="register-title">
+      <div class="demo-pill"><i></i> STATIC DEMO</div>
+      <span class="section-kicker">GET STARTED</span>
+      <h2 id="register-title">Create your account</h2>
+      <p class="auth-copy">This creates a temporary profile in your browser for the sample dashboard.</p>
+      <form class="sandbox-form" data-demo-auth="register">
+        <div class="field-pair"><div><label for="first-name">First name</label><input id="first-name" name="firstName" autocomplete="given-name" placeholder="Alex" required></div><div><label for="last-name">Last name</label><input id="last-name" name="lastName" autocomplete="family-name" placeholder="Morgan" required></div></div>
+        <label for="register-email">Work email</label>
+        <input id="register-email" name="email" type="email" autocomplete="email" placeholder="alex@protocol.xyz" required>
+        <label for="organization">Organization</label>
+        <input id="organization" name="organization" autocomplete="organization" placeholder="Protocol Labs">
+        <label for="register-password">Password</label>
+        <input id="register-password" name="password" type="password" autocomplete="new-password" placeholder="At least 6 characters" minlength="6" required>
+        <label class="check-row"><input type="checkbox" required><span>I agree to use this demonstration environment for evaluation.</span></label>
+        <button class="auth-button" type="submit">Create account <span>↗</span></button>
+      </form>
+      <p class="auth-switch">Already registered? <a href="sandbox-login.html">Sign in</a></p>
+      <p class="demo-note">Demo only. Your sample profile stays in this browser and can be cleared at any time.</p>
+    </section>
+  </main>
+  <script src="sandbox.js"></script>
+</body>
+</html>

@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Sandbox Dashboard — Delta Lateral Indices</title>
+  <meta name="description" content="Sample Delta Lateral Indices sandbox dashboard.">
+  <meta name="theme-color" content="#101817"><link rel="stylesheet" href="style.css"><link rel="stylesheet" href="sandbox.css">
+</head>
+<body class="dashboard-body">
+  <aside class="dashboard-sidebar" id="dashboard-sidebar">
+    <a class="brand dashboard-brand" href="index.html"><span class="mark">Δ</span><span>DELTA LATERAL<br>INDICES</span></a>
+    <div class="workspace-label"><span>SANDBOX WORKSPACE</span><strong id="workspace-name">Personal evaluation</strong></div>
+    <nav class="dashboard-nav" aria-label="Sandbox navigation">
+      <a href="#overview" data-view-link="overview" class="active"><span class="nav-icon">⌁</span>Overview</a>
+      <a href="#account" data-view-link="account"><span class="nav-icon">□</span>Account</a>
+      <a href="#profile" data-view-link="profile"><span class="nav-icon">○</span>Profile</a>
+    </nav>
+    <div class="sidebar-bottom"><span>ENVIRONMENT</span><p><i></i> Sandbox · Simulated</p><a href="product.html">View plans ↗</a><a href="sandbox-login.html">Sign out →</a></div>
+  </aside>
+  <main class="dashboard-main">
+    <header class="dashboard-topbar"><button class="menu-button" id="menu-button" type="button" aria-label="Open navigation" aria-controls="dashboard-sidebar" aria-expanded="false">☰</button><div><span>SANDBOX / <b id="view-breadcrumb">OVERVIEW</b></span></div><div class="top-actions"><span class="status-badge"><i></i> SIMULATED DATA</span><button class="avatar" type="button" data-go-profile aria-label="Open profile">AM</button></div></header>
+
+    <section class="dashboard-view active" data-view="overview" aria-labelledby="overview-title">
+      <div class="dashboard-heading"><div><span class="section-kicker">GOOD MORNING</span><h1 id="overview-title">Signal overview</h1><p>A sample view of market feeds and account activity.</p></div><div class="period-label"><span>LAST UPDATED</span><strong id="last-updated">—</strong></div></div>
+      <div class="notice"><strong>Sandbox mode</strong><span>All values below are illustrative and do not represent live market data.</span></div>
+      <div class="metric-grid">
+        <article><span>API REQUESTS</span><strong>2,481</strong><small>of 10,000 this month</small><div class="meter"><i style="width:24.81%"></i></div></article>
+        <article><span>ACTIVE FEEDS</span><strong>3</strong><small>ETH / USD · BTC / USD · SOL / USD</small></article>
+        <article><span>AVG. CONFIDENCE</span><strong>92.4%</strong><small class="positive">↑ 1.8% over 7 days</small></article>
+        <article><span>ANOMALY FLAGS</span><strong>2</strong><small>in the last 24 hours</small></article>
+      </div>
+      <div class="dashboard-grid">
+        <article class="dash-panel signal-panel"><div class="panel-head"><div><span class="section-kicker">ETH / USD</span><h2>Predictive signal</h2></div><span class="delay-tag">15 MIN DELAY</span></div><div class="signal-values"><div><span>SPOT</span><strong>$3,842.16</strong></div><div><span>15M ESTIMATE</span><strong class="lime">$3,856.90</strong></div><div><span>CONFIDENCE</span><strong>94.8%</strong></div></div><svg viewBox="0 0 720 210" role="img" aria-label="Illustrative ETH USD signal chart"><defs><linearGradient id="area" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#c4f56b" stop-opacity=".22"/><stop offset="1" stop-color="#c4f56b" stop-opacity="0"/></linearGradient></defs><path class="grid-line" d="M0 42H720M0 96H720M0 150H720"/><path class="area" d="M0 165 C55 152 72 174 120 143 S195 119 238 128 S310 96 350 108 S420 88 465 94 S535 55 585 71 S650 42 720 31 V210H0Z"/><path class="chart-line" d="M0 165 C55 152 72 174 120 143 S195 119 238 128 S310 96 350 108 S420 88 465 94 S535 55 585 71 S650 42 720 31"/><path class="forecast-line" d="M585 71 C630 68 671 40 720 31"/><circle cx="585" cy="71" r="5"/></svg><div class="chart-axis"><span>09:00</span><span>10:00</span><span>11:00</span><span>NOW</span></div></article>
+        <article class="dash-panel feed-panel"><div class="panel-head"><div><span class="section-kicker">FEED STATUS</span><h2>Markets</h2></div><a href="mailto:hello@delta-indices.info?subject=Sandbox%20asset%20request">Request asset ↗</a></div><div class="feed-row"><div><span class="asset">Ξ</span><p><strong>ETH / USD</strong><small>Ethereum</small></p></div><p class="feed-price"><strong>$3,842.16</strong><small class="positive">+2.14%</small></p></div><div class="feed-row"><div><span class="asset">₿</span><p><strong>BTC / USD</strong><small>Bitcoin</small></p></div><p class="feed-price"><strong>$96,218.41</strong><small class="positive">+0.82%</small></p></div><div class="feed-row"><div><span class="asset">S</span><p><strong>SOL / USD</strong><small>Solana</small></p></div><p class="feed-price"><strong>$186.72</strong><small class="negative">−1.06%</small></p></div></article>
+      </div>
+      <article class="dash-panel activity-panel"><div class="panel-head"><div><span class="section-kicker">RECENT ACTIVITY</span><h2>API requests</h2></div><a href="#account" data-view-link="account">View account →</a></div><div class="activity-table"><div class="table-row table-head"><span>ENDPOINT</span><span>ASSET</span><span>STATUS</span><span>LATENCY</span><span>TIME</span></div><div class="table-row"><code>GET /v1/forecast</code><span>ETH / USD</span><span class="success">200</span><span>84 ms</span><span>1 min ago</span></div><div class="table-row"><code>GET /v1/spot</code><span>BTC / USD</span><span class="success">200</span><span>61 ms</span><span>4 min ago</span></div><div class="table-row"><code>GET /v1/confidence</code><span>SOL / USD</span><span class="success">200</span><span>72 ms</span><span>9 min ago</span></div></div></article>
+    </section>
+
+    <section class="dashboard-view" data-view="account" aria-labelledby="account-title">
+      <div class="dashboard-heading"><div><span class="section-kicker">WORKSPACE</span><h1 id="account-title">Account</h1><p>Review your Sandbox plan, usage, and sample credentials.</p></div></div>
+      <div class="account-grid"><article class="dash-panel plan-summary"><span class="section-kicker">CURRENT PLAN</span><div class="plan-title-row"><h2>Sandbox</h2><span>$0 / month</span></div><p>Evaluation access with delayed feeds and illustrative signal metadata.</p><div class="usage-block"><div><span>Monthly API requests</span><strong>2,481 / 10,000</strong></div><div class="meter"><i style="width:24.81%"></i></div><small>Resets October 1, 2026</small></div><a class="auth-button compact" href="product.html">Compare plans <span>↗</span></a></article><article class="dash-panel account-details"><div class="panel-head"><div><span class="section-kicker">DETAILS</span><h2>Workspace</h2></div></div><dl><div><dt>Workspace name</dt><dd id="account-organization">Personal evaluation</dd></div><div><dt>Environment</dt><dd><span class="status-dot"></span>Sandbox</dd></div><div><dt>Data delay</dt><dd>15 minutes</dd></div><div><dt>Billing</dt><dd>No payment method</dd></div></dl></article></div>
+      <article class="dash-panel api-panel"><div class="panel-head"><div><span class="section-kicker">DEVELOPER ACCESS</span><h2>Sample API key</h2></div><span class="delay-tag">NON-FUNCTIONAL</span></div><p>Use this placeholder to preview how credentials will be managed when the API becomes available.</p><div class="key-row"><code id="sample-key">dli_sandbox_demo_••••••••••••8f2a</code><button type="button" id="copy-key">Copy</button></div><p class="inline-feedback" id="copy-feedback" aria-live="polite"></p></article>
+    </section>
+
+    <section class="dashboard-view" data-view="profile" aria-labelledby="profile-title">
+      <div class="dashboard-heading"><div><span class="section-kicker">PERSONAL SETTINGS</span><h1 id="profile-title">Profile</h1><p>Update the sample identity shown in this browser.</p></div></div>
+      <article class="dash-panel profile-panel"><div class="profile-banner"><div class="large-avatar" id="profile-avatar">AM</div><div><h2 id="profile-display-name">Alex Morgan</h2><p>Sandbox evaluator</p></div></div><form class="profile-form" id="profile-form"><div class="field-pair"><div><label for="profile-first">First name</label><input id="profile-first" name="firstName" value="Alex" required></div><div><label for="profile-last">Last name</label><input id="profile-last" name="lastName" value="Morgan" required></div></div><label for="profile-email">Work email</label><input id="profile-email" name="email" type="email" value="alex@protocol.xyz" required><label for="profile-org">Organization</label><input id="profile-org" name="organization" value="Personal evaluation"><label for="profile-role">Role</label><select id="profile-role" name="role"><option>Protocol engineer</option><option>Researcher</option><option>Product lead</option><option>Risk analyst</option><option>Other</option></select><div class="profile-actions"><button class="auth-button compact" type="submit">Save profile <span>↗</span></button><span id="profile-feedback" aria-live="polite"></span></div></form></article>
+    </section>
+  </main>
+  <script src="sandbox.js"></script>
+</body>
+</html>

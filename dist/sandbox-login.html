@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Sandbox Login — Delta Lateral Indices</title>
+  <meta name="description" content="Sign in to the Delta Lateral Indices evaluation sandbox.">
+  <meta name="theme-color" content="#101817"><link rel="stylesheet" href="style.css"><link rel="stylesheet" href="sandbox.css">
+</head>
+<body class="auth-body">
+  <header class="sandbox-header wrap">
+    <a class="brand" href="index.html" aria-label="Delta Lateral Indices home"><span class="mark">Δ</span><span>DELTA LATERAL<br>INDICES</span></a>
+    <a class="back-link" href="product.html">← Back to plans</a>
+  </header>
+  <main class="auth-shell wrap">
+    <section class="auth-intro">
+      <span class="eyebrow"><span class="small-line"></span> SANDBOX ACCESS</span>
+      <h1>Test the signal<br><em>before the stakes.</em></h1>
+      <p>Explore a representative oracle workspace with delayed market data, confidence scores, and sample API activity.</p>
+      <div class="auth-stat"><span>SIMULATED ENVIRONMENT</span><strong>No wallet or live funds required</strong></div>
+    </section>
+    <section class="auth-card" aria-labelledby="login-title">
+      <div class="demo-pill"><i></i> STATIC DEMO</div>
+      <span class="section-kicker">WELCOME BACK</span>
+      <h2 id="login-title">Sign in to Sandbox</h2>
+      <p class="auth-copy">Any valid-looking email and password will open the sample dashboard.</p>
+      <form class="sandbox-form" data-demo-auth="login">
+        <label for="login-email">Work email</label>
+        <input id="login-email" name="email" type="email" autocomplete="email" placeholder="you@protocol.xyz" required>
+        <div class="label-row"><label for="login-password">Password</label><a href="mailto:hello@delta-indices.info?subject=Sandbox%20password">Need help?</a></div>
+        <input id="login-password" name="password" type="password" autocomplete="current-password" placeholder="Enter your password" minlength="6" required>
+        <label class="check-row"><input type="checkbox" name="remember"><span>Keep me signed in on this device</span></label>
+        <button class="auth-button" type="submit">Open dashboard <span>↗</span></button>
+      </form>
+      <p class="auth-switch">New to Delta Lateral? <a href="sandbox-register.html">Create a sandbox account</a></p>
+      <p class="demo-note">Demo only. Credentials are validated in your browser and are not transmitted or stored.</p>
+    </section>
+  </main>
+  <script src="sandbox.js"></script>
+</body>
+</html>
