@@ -1,0 +1,15 @@
+{
+  "version": 2,
+  "builds": [
+    {"src": "api/index.py", "use": "@vercel/python"},
+    {"src": "public/**", "use": "@vercel/static"}
+  ],
+  "routes": [
+    {"src": "/(?:api|auth)(?:/.*)?", "dest": "/api/index.py"},
+    {"src": "/Oracle691(?:/admin)?/?", "dest": "/api/index.py"},
+    {"src": "/Oracle691/stat\\.i", "dest": "/api/index.py"},
+    {"src": "/Oracle691/(.*)", "dest": "/public/Oracle691/$1"},
+    {"src": "/", "dest": "/public/index.html"},
+    {"src": "/(.*)", "dest": "/public/$1"}
+  ]
+}

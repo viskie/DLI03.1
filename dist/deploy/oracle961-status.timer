@@ -1,0 +1,11 @@
+[Unit]
+Description=Publish Oracle 961 status at the start of every UTC hour
+
+[Timer]
+OnCalendar=*-*-* *:00:00 UTC
+Persistent=true
+AccuracySec=1min
+Unit=oracle961-status.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,21 @@
+[Unit]
+Description=Generate and publish the encrypted Oracle 961 hourly status
+After=network-online.target dli-local-portal.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/src/DLi/Oracle691
+EnvironmentFile=/src/DLi/Oracle691/instance/oracle961-status/publisher.env
+ExecStart=/home/o/Documents/ChatGPT/DLi-we/.venv/bin/python /src/DLi/Oracle691/status_generator.py --upload
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadOnlyPaths=/src/DLi-portal
+# SQLite WAL readers may need a transient -shm file beside the query-only
+# ledger.  No generator statement mutates the database.
+ReadWritePaths=/src/DLi/Oracle691/instance/oracle961-status /src/DLi-portal/.local-runtime/instances/instance-2/results/prediction_scopes
+TimeoutStartSec=10min
+

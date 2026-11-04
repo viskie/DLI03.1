@@ -1,0 +1,8 @@
+.env*
+instance/
+private-deploy/
+__pycache__/
+tests/
+*.md
+.venv/
+.git/
