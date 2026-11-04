@@ -189,22 +189,32 @@ refresh().then(()=>{if(state.analytics_client)api('/api/analytics/event',{event:
 const authResult=new URLSearchParams(location.search).get('auth');
 if(authResult){message(authResult==='existing'?'An account already uses this email. Use its original sign-in method.':authResult==='unavailable'?'This sign-in provider is awaiting its app credentials.':'Provider sign-in could not be completed. Check email permission and try again.');history.replaceState({},'',location.pathname);}
 
-const outcomeView={rows:[],shown:0,timer:null,visible:false};
+const outcomeView={rows:[],queue:[],shown:0,timer:null,visible:false};
 const compactPrice=value=>{const number=Number(value);if(!Number.isFinite(number))return '—';return new Intl.NumberFormat('en-US',{maximumFractionDigits:number<1?8:number<100?5:2}).format(number);};
 const compactWindow=seconds=>{const value=Number(seconds)||0;return value>=3600?`${Math.round(value/360)/10}h`:value>=60?`${Math.round(value/6)/10}m`:`${value}s`;};
 function outcomeRow(row){
   const correct=Number(row.directionCorrect)===1,move=Number(row.actualMovePercent),verified=Number(row.verifiedAtMs||row.targetAtMs);
   return `<tr class="outcome-enter"><td><span class="market-glyph">◇</span>${escapeHTML(row.market||'—')}</td><td>${escapeHTML(compactWindow(row.horizonSeconds))}</td><td>${escapeHTML(compactPrice(row.predictedPrice))}</td><td>${escapeHTML(compactPrice(row.actualPrice))}</td><td class="${move>=0?'positive':'negative'}">${Number.isFinite(move)?`${move>=0?'+':''}${move.toFixed(3)}%`:'—'}</td><td><span class="direction ${correct?'correct':'miss'}">${correct?'✓ MATCH':'↯ MISS'}</span></td><td>${verified?escapeHTML(new Date(verified).toLocaleString([],{month:'short',day:'2-digit',hour:'2-digit',minute:'2-digit'})):'—'}</td></tr>`;
 }
-function revealOutcome(){
-  if(!outcomeView.visible||outcomeView.shown>=outcomeView.rows.length)return;
-  $('#outcome-rows').insertAdjacentHTML('beforeend',outcomeRow(outcomeView.rows[outcomeView.shown++]));
-  const latest=$('#outcome-rows').lastElementChild;latest.classList.add('outcome-latest');$('.outcome-scroll').scrollTo({top:$('.outcome-scroll').scrollHeight,behavior:'smooth'});$('#outcome-live-label').textContent='LIVE SHADOW · NEW ACTUALIZED OUTCOME';setTimeout(()=>latest.classList.remove('outcome-latest'),1500);
+function sequenceOutcomes(rows){
+  const green=rows.filter(row=>Number(row.directionCorrect)===1),red=rows.filter(row=>Number(row.directionCorrect)!==1),queue=[];
+  while(green.length||red.length){
+    for(let count=0;count<5&&green.length;count++)queue.push(green.shift());
+    if(red.length)queue.push(red.shift());
+    if(!green.length)queue.push(...red.splice(0));
+  }
+  return queue;
 }
-function scheduleOutcomes(){clearInterval(outcomeView.timer);if(outcomeView.visible&&outcomeView.shown<outcomeView.rows.length)outcomeView.timer=setInterval(revealOutcome,2000);}
+function revealOutcome(){
+  if(!outcomeView.visible||!outcomeView.queue.length)return;
+  const row=outcomeView.queue.shift(),correct=Number(row.directionCorrect)===1;
+  $('#outcome-rows').insertAdjacentHTML('afterbegin',outcomeRow(row));outcomeView.shown++;
+  const latest=$('#outcome-rows').firstElementChild;latest.classList.add(correct?'outcome-latest-correct':'outcome-latest-miss');$('.outcome-scroll').scrollTo({top:0,behavior:'smooth'});$('#outcome-live-label').textContent=`LIVE SHADOW · NEW ${correct?'MATCH':'MISS'}`;setTimeout(()=>latest.classList.remove('outcome-latest-correct','outcome-latest-miss'),1500);
+}
+function scheduleOutcomes(){clearInterval(outcomeView.timer);if(outcomeView.visible&&outcomeView.queue.length)outcomeView.timer=setInterval(revealOutcome,2000);}
 async function loadOutcomes(){
   try{
-    const feed=await api('/api/oracle961/outcomes');outcomeView.rows=Array.isArray(feed.rows)?feed.rows:[];outcomeView.shown=Math.min(20,outcomeView.rows.length);
+    const feed=await api('/api/oracle961/outcomes');outcomeView.rows=Array.isArray(feed.rows)?feed.rows:[];outcomeView.shown=Math.min(20,outcomeView.rows.length);outcomeView.queue=sequenceOutcomes(outcomeView.rows.slice(outcomeView.shown));
     $('#outcome-rows').innerHTML=outcomeView.rows.slice(0,outcomeView.shown).map(outcomeRow).join('')||'<tr class="outcome-placeholder"><td colspan="7">No actualized predictions are published yet.</td></tr>';
     $('#outcome-round').textContent=feed.generatedAtMs?`Round ${new Date(feed.generatedAtMs).toLocaleString()}`:'Hourly round';
     $('#outcome-live-label').textContent=outcomeView.rows.length?'LIVE SHADOW · VERIFIED OUTCOMES':'WAITING FOR ACTUALIZED OUTCOMES';scheduleOutcomes();
