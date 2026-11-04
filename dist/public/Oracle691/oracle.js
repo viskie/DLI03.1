@@ -199,16 +199,15 @@ function outcomeRow(row){
 function revealOutcome(){
   if(!outcomeView.visible||outcomeView.shown>=outcomeView.rows.length)return;
   $('#outcome-rows').insertAdjacentHTML('beforeend',outcomeRow(outcomeView.rows[outcomeView.shown++]));
-  $('#outcome-live-label').textContent=outcomeView.shown<outcomeView.rows.length?`LIVE REVEAL · ${outcomeView.shown} OF ${outcomeView.rows.length} PUBLISHED`:'LATEST HOURLY LEDGER FULLY DISPLAYED';
+  const latest=$('#outcome-rows').lastElementChild;latest.classList.add('outcome-latest');$('.outcome-scroll').scrollTo({top:$('.outcome-scroll').scrollHeight,behavior:'smooth'});$('#outcome-live-label').textContent='LIVE SHADOW · NEW ACTUALIZED OUTCOME';setTimeout(()=>latest.classList.remove('outcome-latest'),1500);
 }
 function scheduleOutcomes(){clearInterval(outcomeView.timer);if(outcomeView.visible&&outcomeView.shown<outcomeView.rows.length)outcomeView.timer=setInterval(revealOutcome,2000);}
 async function loadOutcomes(){
   try{
     const feed=await api('/api/oracle961/outcomes');outcomeView.rows=Array.isArray(feed.rows)?feed.rows:[];outcomeView.shown=Math.min(20,outcomeView.rows.length);
     $('#outcome-rows').innerHTML=outcomeView.rows.slice(0,outcomeView.shown).map(outcomeRow).join('')||'<tr class="outcome-placeholder"><td colspan="7">No actualized predictions are published yet.</td></tr>';
-    $('#outcome-count').textContent=new Intl.NumberFormat('en-US').format(feed.totalActualized||0);
     $('#outcome-round').textContent=feed.generatedAtMs?`Round ${new Date(feed.generatedAtMs).toLocaleString()}`:'Hourly round';
-    $('#outcome-live-label').textContent=outcomeView.rows.length?`VERIFIED FEED · ${outcomeView.shown} OF ${outcomeView.rows.length} PUBLISHED`:'WAITING FOR ACTUALIZED OUTCOMES';scheduleOutcomes();
+    $('#outcome-live-label').textContent=outcomeView.rows.length?'LIVE SHADOW · VERIFIED OUTCOMES':'WAITING FOR ACTUALIZED OUTCOMES';scheduleOutcomes();
   }catch(error){$('#outcome-rows').innerHTML='<tr class="outcome-placeholder"><td colspan="7">The verified outcome feed is between hourly publications.</td></tr>';$('#outcome-live-label').textContent='HOURLY FEED TEMPORARILY UNAVAILABLE';}
 }
 const outcomeStage=$('#prediction-reality');
