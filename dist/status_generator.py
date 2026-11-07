@@ -277,6 +277,23 @@ def _production_sources() -> tuple[dict[str, Any] | None, dict[str, Any] | None]
         "X-DLI-Oracle-Timestamp": timestamp,
         "X-DLI-Oracle-Signature": signature,
     })
+    ticker_request = Request(
+        "https://api.coindcx.com/exchange/ticker",
+        headers={"User-Agent": "Mozilla/5.0 DLi-Oracle691-Publisher/1.0"},
+    )
+    with urlopen(ticker_request, timeout=30) as response:
+        tickers = json.load(response)
+    fx_row = next((row for row in tickers if row.get("market") == "USDTINR"), None)
+    if not fx_row:
+        raise RuntimeError("CoinDCX USDT/INR conversion is unavailable")
+    fx_timestamp = int(float(fx_row["timestamp"]))
+    if fx_timestamp < 10_000_000_000:
+        fx_timestamp *= 1000
+    source["usdInr"] = {
+        "rate": float(fx_row["last_price"]),
+        "observedAtMs": fx_timestamp,
+        "basis": "CoinDCX USDT/INR spot proxy",
+    }
     return outcomes, source
 
 
