@@ -211,12 +211,9 @@ $('#disclaimer-button').onclick=()=>{tab('faq');$('#faq-panel').scrollIntoView({
 $('a[href="#contracts"]').onclick=()=>tab('contracts');
 // Fixed illustrative entries: these do not represent executed trades.
 const demoActivity = [
-  ['Plan 1 · Investment-linked', 2, '$600.00', '2 min ago'],
-  ['Plan 2 · Prepaid Plus', 1, '$5,000.00', '8 min ago'],
-  ['Plan 1 · Investment-linked', 5, '$1,500.00', '14 min ago'],
-  ['Plan 2 · Prepaid Plus', 2, '$10,000.00', '27 min ago'],
-  ['Plan 1 · Investment-linked', 10, '$3,000.00', '41 min ago'],
-  ['Plan 2 · Prepaid Plus', 3, '$15,000.00', '1 hour ago'],
+  ['1-day bot list · sample', 1, '$28.04', '2 min ago'],
+  ['3-day bot list · sample', 1, '$75.70', '8 min ago'],
+  ['9-day bot list · sample', 1, '$189.24', '14 min ago'],
 ];
 $('#activity-rows').innerHTML = demoActivity.map(row => `<tr>${row.map(value => `<td>${escapeHTML(String(value))}</td>`).join('')}</tr>`).join('');
 renderPlans();
