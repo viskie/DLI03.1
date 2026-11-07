@@ -8,6 +8,7 @@ from cryptography.fernet import Fernet
 
 from status_artifact import StatusArtifactError, decrypt_status, encrypt_status
 from status_generator import build_status
+from contracts import build_daily_contracts
 
 
 class StatusArtifactTests(unittest.TestCase):
@@ -49,6 +50,30 @@ class StatusArtifactTests(unittest.TestCase):
         example = first['valuation']['purchaseExamples'][1]
         self.assertEqual(example['purchaseUsd'], 700)
         self.assertGreater(example['oracle961QUnits'], 0)
+        self.assertEqual(len(first['dailyContracts']['contracts']), 3)
+        self.assertFalse(first['dailyContracts']['available'])
+
+    def test_three_daily_contracts_have_separate_access_fee_and_bot_capital(self):
+        source = {
+            'generatedAtMs': 3_599_000, 'scopeStatus': 'ready', 'scopeId': 'scope',
+            'tradeEligibleNowCount': 2, 'blockedReasons': [],
+            'tradeQuantum': {'investmentInr': 1055},
+            'usdInr': {'rate': 84.4, 'observedAtMs': 3_599_000, 'basis': 'test'},
+            'rows': [
+                {'rank': 1, 'market': 'BTC/INR', 'forecastHorizonSeconds': 86_400, 'signalId': 'a'},
+                {'rank': 2, 'market': 'ETH/INR', 'forecastHorizonSeconds': 43_200, 'signalId': 'b'},
+            ],
+        }
+        catalogue = build_daily_contracts(source, now_ms=3_600_000,
+                                           prediction_quantum_reference_usd=1.0)
+        self.assertTrue(catalogue['available'])
+        self.assertEqual([item['accessDays'] for item in catalogue['contracts']], [1, 3, 9])
+        self.assertEqual([item['dailyBatchSize'] for item in catalogue['contracts']], [2, 2, 2])
+        self.assertTrue(all(item['estimatedBotCapitalInr'] >= 2 * 1055 for item in catalogue['contracts']))
+        self.assertTrue(all(item['estimatedBotCapitalUsd'] > 0 for item in catalogue['contracts']))
+        self.assertTrue(all(item['accessFeeCents'] > 0 for item in catalogue['contracts']))
+        self.assertNotEqual(catalogue['contracts'][0]['accessFeeCents'],
+                            catalogue['contracts'][0]['estimatedBotCapitalInr'] * 100)
 
     def test_authenticated_round_trip_and_wrong_key(self):
         payload = build_status(self.instance, now_ms=3_600_000)

@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import sys
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
@@ -80,6 +81,32 @@ class PortalTests(unittest.TestCase):
             csrf=stranger.get('/api/session').json['csrf']
             payment['razorpay_signature']=signature
             self.assertEqual(stranger.post('/api/checkout',json=payment,headers={'X-CSRF-Token':csrf}).status_code,400)
+
+    def test_daily_contract_uses_exact_server_price_and_preserves_batch(self):
+        self.register()
+        contract = {'contractId':'O961-DAILY','name':'Oracle 961 · 1-day bot list',
+                    'status':'available','accessFeeCents':2500,
+                    'purchaseUntilMs':int(time.time()*1000)+60_000,
+                    'accessUntilMs':int(time.time()*1000)+86_400_000,
+                    'batchSha256':'abc'}
+        private = {'contract':contract,'predictionBatch':[{'market':'BTC/INR'}]}
+        env={'RAZORPAY_KEY_ID':'rzp_test_fake','RAZORPAY_KEY_SECRET':'secret',
+             'ORACLE_CHECKOUT_ENABLED':'true','ORACLE_DAILY_CONTRACT_CHECKOUT_ENABLED':'true'}
+        def provider(path, data=None):
+            if path == 'orders':
+                self.assertEqual(data['amount'],2500)
+                self.assertEqual(data['notes']['contract_id'],'O961-DAILY')
+                return {'id':'order_daily','amount':2500,'currency':'USD'}
+            return {'id':'pay_daily','order_id':'order_daily','amount':2500,'currency':'USD','status':'captured'}
+        with patch.dict(os.environ,env), patch.object(module,'private_daily_contract',return_value=private), patch.object(module,'razorpay',side_effect=provider):
+            self.assertEqual(self.post('/api/checkout',{'action':'order','contract_id':'O961-DAILY','amount':2499}).status_code,409)
+            order=self.post('/api/checkout',{'action':'order','contract_id':'O961-DAILY','amount':2500}).json
+            signature=hmac.new(b'secret',b'order_daily|pay_daily',hashlib.sha256).hexdigest()
+            result=self.post('/api/checkout',{'action':'verify','razorpay_order_id':'order_daily','razorpay_payment_id':'pay_daily','razorpay_signature':signature})
+            self.assertEqual(result.status_code,200)
+            signals=self.client.get('/api/oracle961/contracts/O961-DAILY/signals')
+            self.assertEqual(signals.status_code,200)
+            self.assertEqual(signals.json['rows'][0]['market'],'BTC/INR')
 
     def test_social_registration_and_returning_signin(self):
         for provider in ('google','facebook','linkedin'):

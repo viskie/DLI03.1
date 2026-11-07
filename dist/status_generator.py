@@ -11,10 +11,12 @@ import sqlite3
 import tempfile
 import time
 from typing import Any
+from urllib.request import Request, urlopen
 
 from cryptography.fernet import Fernet
 
-from status_artifact import encrypt_status, payload_sha256, validate_key
+from status_artifact import decrypt_status, encrypt_status, payload_sha256, validate_key
+from contracts import build_daily_contracts
 
 
 ROOT = Path(__file__).resolve().parent
@@ -174,16 +176,38 @@ def _scoring(actualized: list[dict[str, Any]], pending: list[dict[str, Any]],
 
 
 def build_status(instance: Path = DEFAULT_INSTANCE, now_ms: int | None = None,
-                 previous_artifact_sha256: str | None = None) -> dict[str, Any]:
+                 previous_artifact_sha256: str | None = None,
+                 *, remote_outcomes: dict[str, Any] | None = None,
+                 contract_source: dict[str, Any] | None = None) -> dict[str, Any]:
     now_ms = int(time.time() * 1000) if now_ms is None else int(now_ms)
     hour = _hour_floor(now_ms)
     results = instance / "results/prediction_scopes"
-    actualized, pending, actualized_count, pending_count = _outcomes(results / "outcomes.sqlite")
+    if remote_outcomes is None:
+        actualized, pending, actualized_count, pending_count = _outcomes(results / "outcomes.sqlite")
+    else:
+        source_rows = remote_outcomes.get("rows") if isinstance(remote_outcomes, dict) else []
+        actualized = []
+        for row in source_rows if isinstance(source_rows, list) else []:
+            if not isinstance(row, dict):
+                continue
+            mapped = dict(row)
+            predicted, actual = row.get("predictedPrice"), row.get("actualPrice")
+            if isinstance(predicted, (int, float)) and isinstance(actual, (int, float)) and predicted > 0 and actual > 0:
+                mapped["absoluteError"] = abs(math.log(predicted / actual))
+            actualized.append(mapped)
+        pending = []
+        actualized_count = int(remote_outcomes.get("totalActualized") or len(actualized))
+        pending_count = 0
     state = _read_json(instance / "state.json", {}) or {}
     shadow = _read_json(instance / "shadow.json", {}) or {}
     scope = _latest_scope(results)
     valuation = _scoring(actualized, pending, scope, shadow, now_ms,
                          actualized_count=actualized_count, pending_count=pending_count)
+    contract_catalogue = build_daily_contracts(
+        contract_source,
+        now_ms=now_ms,
+        prediction_quantum_reference_usd=valuation["predictionQuantumReferenceUsd"],
+    )
     scope_summary = {key: scope.get(key) for key in (
         "scopeId", "createdAtMs", "status", "selectedCount", "tradeEligibleCount",
         "minimumDesiredCount", "shortfall", "forecastConfigId", "modelSha256",
@@ -216,6 +240,7 @@ def build_status(instance: Path = DEFAULT_INSTANCE, now_ms: int | None = None,
             "actualized": {"count": actualized_count, "publishedCount": len(actualized), "rows": actualized},
             "pending": {"count": pending_count, "publishedCount": len(pending), "rows": pending},
         },
+        "dailyContracts": contract_catalogue,
         "methodology": {
             "version": "oracle961-quantum-v1",
             "summary": "Evidence-weighted prediction quality, recomputed once per UTC hour.",
@@ -223,6 +248,36 @@ def build_status(instance: Path = DEFAULT_INSTANCE, now_ms: int | None = None,
             "referenceFormula": "USD 0.50 + qualityScore; allocation is a game simulation only.",
         },
     }
+
+
+def _get_json(url: str, headers: dict[str, str] | None = None) -> dict[str, Any]:
+    request = Request(url, headers={"User-Agent": "DLi-Oracle691-Publisher/1.0", **(headers or {})})
+    with urlopen(request, timeout=30) as response:
+        value = json.load(response)
+    if not isinstance(value, dict):
+        raise RuntimeError(f"invalid JSON object returned by {url}")
+    return value
+
+
+def _production_sources() -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    base = os.getenv("ORACLE_PRODUCTION_BASE_URL", "").rstrip("/")
+    if not base:
+        return None, None
+    outcomes = _get_json(base + "/api/public/prediction-outcomes")
+    secret = os.getenv("DLI_ORACLE_EXPORT_SECRET", "")
+    if not secret:
+        raise RuntimeError("DLI_ORACLE_EXPORT_SECRET is required for production contract sizing")
+    path = "/api/integrations/oracle-contract-source"
+    timestamp = str(int(time.time()))
+    import hmac
+    signature = hmac.new(
+        secret.encode("utf-8"), f"{timestamp}\n{path}".encode("utf-8"), hashlib.sha256
+    ).hexdigest()
+    source = _get_json(base + path, {
+        "X-DLI-Oracle-Timestamp": timestamp,
+        "X-DLI-Oracle-Signature": signature,
+    })
+    return outcomes, source
 
 
 def _load_key(path: Path, initialize: bool = False) -> bytes:
@@ -253,7 +308,30 @@ def generate(*, instance: Path, output: Path, archive: Path, key_file: Path,
     key = _load_key(key_file, initialize_key)
     chain_head = output.parent / ".chain-head"
     previous = chain_head.read_text().strip() if chain_head.is_file() else None
-    payload = build_status(instance, now_ms=now_ms, previous_artifact_sha256=previous)
+    remote_outcomes, contract_source = _production_sources()
+    payload = build_status(
+        instance,
+        now_ms=now_ms,
+        previous_artifact_sha256=previous,
+        remote_outcomes=remote_outcomes,
+        contract_source=contract_source,
+    )
+    if output.is_file():
+        try:
+            previous_payload = decrypt_status(output.read_bytes(), key)
+            previous_contracts = previous_payload.get("dailyContracts", {})
+            current_contracts = payload.get("dailyContracts", {})
+            if (
+                previous_contracts.get("issueDate") == current_contracts.get("issueDate")
+                and previous_contracts.get("available") is True
+            ):
+                # Once a day's three contracts are available, their prediction
+                # batch, IDs, prices, and capital disclosure stay immutable.
+                payload["dailyContracts"] = previous_contracts
+        except Exception:
+            # The current round still publishes; authenticated artifact parsing
+            # below remains the authoritative integrity boundary.
+            pass
     artifact = encrypt_status(payload, key)
     digest = hashlib.sha256(artifact).hexdigest()
     archive_name = payload["round"]["id"].replace(":", "-") + ".stat.i"
@@ -277,6 +355,8 @@ def generate(*, instance: Path, output: Path, archive: Path, key_file: Path,
         "qualityScore": payload["valuation"]["qualityScore"],
         "predictionQuantumReferenceUsd": payload["valuation"]["predictionQuantumReferenceUsd"],
         "purchase700Oracle961QUnits": payload["valuation"]["purchaseExamples"][1]["oracle961QUnits"],
+        "dailyContractsAvailable": payload["dailyContracts"]["available"],
+        "dailyContractCount": len(payload["dailyContracts"]["contracts"]),
         "output": str(output),
         "uploaded": bool(upload_result),
         "blobPath": blob_path if upload_result else None,

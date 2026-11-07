@@ -118,6 +118,8 @@ def current():
         holdings = [p for p in data['payments'].values() if p['user_id'] == session.get('uid')]
     return jsonify(csrf=session['csrf'], user=public_user(user) if user else None, holdings=holdings, access=(user or {}).get('access', {}),
                    analytics_client=CLOUD, google_enabled=bool(oauth._registry.get('google')), oauth_providers={name: bool(oauth._registry.get(name)) for name in ('google', 'facebook', 'linkedin')}, checkout_enabled=configured(), payment_pages=page_status(), plans=PLANS,
+                   daily_contract_checkout_enabled=configured() and os.getenv('ORACLE_DAILY_CONTRACT_CHECKOUT_ENABLED') == 'true',
+                   daily_contracts=public_daily_contracts(),
                    payment_mode='test' if os.getenv('RAZORPAY_KEY_ID', '').startswith('rzp_test_') else 'live' if configured() else 'unconfigured')
 
 @app.post('/api/register')
@@ -269,19 +271,33 @@ def checkout():
     value = body()
     try:
         if value.get('action') == 'order':
-            plan = value.get('plan')
-            try:
-                amount = validate_amount(plan, value.get('amount'))
-            except ValueError as error:
-                return jsonify(error=str(error)), 400
+            private_contract = private_daily_contract(value.get('contract_id')) if value.get('contract_id') else None
+            contract = private_contract.get('contract') if private_contract else None
+            if contract:
+                if os.getenv('ORACLE_DAILY_CONTRACT_CHECKOUT_ENABLED') != 'true':
+                    return jsonify(error='Daily contract checkout is awaiting commercial and payment approval.'), 503
+                if contract.get('status') != 'available' or int(contract.get('purchaseUntilMs') or 0) <= int(time.time() * 1000):
+                    return jsonify(error='This daily contract is not currently available.'), 409
+                amount = int(contract.get('accessFeeCents') or 0)
+                if value.get('amount') != amount or amount < 100:
+                    return jsonify(error='The contract price changed. Refresh before continuing.'), 409
+                plan = 'daily_contract'
+                plan_name = str(contract.get('name') or contract['contractId'])
+            else:
+                plan = value.get('plan')
+                try:
+                    amount = validate_amount(plan, value.get('amount'))
+                except ValueError as error:
+                    return jsonify(error=str(error)), 400
+                plan_name = PLANS[plan]['name']
             with store.transaction() as data:
                 pending = [o for o in data['orders'].values() if o['user_id'] == session['uid'] and time.time()-o['created'] < 3600]
                 if len(pending) >= 10:
                     return jsonify(error='Too many checkout attempts. Please try later.'), 429
-            order = razorpay('orders', {'amount': amount, 'currency': 'USD', 'receipt': 'oracle_' + uuid.uuid4().hex[:24], 'notes': {'plan': plan}})
+            order = razorpay('orders', {'amount': amount, 'currency': 'USD', 'receipt': 'oracle_' + uuid.uuid4().hex[:24], 'notes': {'plan': plan, 'contract_id': contract.get('contractId') if contract else ''}})
             with store.transaction() as data:
-                data['orders'][order['id']] = {'id': order['id'], 'user_id': session['uid'], 'plan': plan, 'amount': amount, 'created': time.time()}
-            return jsonify(order_id=order['id'], amount=order['amount'], currency=order['currency'], key=os.environ['RAZORPAY_KEY_ID'], name=PLANS[plan]['name'])
+                data['orders'][order['id']] = {'id': order['id'], 'user_id': session['uid'], 'plan': plan, 'plan_name': plan_name, 'contract_id': contract.get('contractId') if contract else None, 'contract_snapshot': contract, 'prediction_batch': private_contract.get('predictionBatch', []) if private_contract else [], 'amount': amount, 'created': time.time()}
+            return jsonify(order_id=order['id'], amount=order['amount'], currency=order['currency'], key=os.environ['RAZORPAY_KEY_ID'], name=plan_name)
         if value.get('action') == 'verify':
             order_id = str(value.get('razorpay_order_id', ''))
             payment_id = str(value.get('razorpay_payment_id', ''))
@@ -305,7 +321,7 @@ def record_payment(payment):
             raise ValueError('Payment mismatch')
         if payment.get('status') != 'captured':
             return {'status': 'pending', 'message': 'Awaiting payment capture. Your account will update after confirmation.'}
-        data['payments'].setdefault(payment['id'], {'payment_id': payment['id'], 'user_id': order['user_id'], 'plan': order['plan'], 'amount': order['amount'], 'created': time.time(), 'status': 'Paid · allocation pending', 'plan_name': PLANS.get(order['plan'], {}).get('name', order['plan'])})
+        data['payments'].setdefault(payment['id'], {'payment_id': payment['id'], 'user_id': order['user_id'], 'plan': order['plan'], 'contract_id': order.get('contract_id'), 'contract_snapshot': order.get('contract_snapshot'), 'prediction_batch': order.get('prediction_batch', []), 'amount': order['amount'], 'created': time.time(), 'status': 'Paid · access active' if order.get('contract_id') else 'Paid · access activation pending', 'plan_name': order.get('plan_name') or PLANS.get(order['plan'], {}).get('name', order['plan'])})
     return {'status': 'captured', 'message': 'Payment confirmed. Your receipt is saved in My Holdings. Allocation and rights remain subject to the final offering terms and team confirmation.'}
 
 def record_hosted_payment(payment):
@@ -379,6 +395,39 @@ def oracle_status_bytes():
     path = Path(os.getenv('ORACLE_STATUS_LOCAL_FILE') or ROOT / 'instance/oracle961-status/stat.i')
     return path.read_bytes()
 
+def oracle_status_payload():
+    key = os.getenv('ORACLE_STATUS_KEY')
+    if not key and not CLOUD:
+        try:
+            key = (ROOT / 'instance/oracle961-status/status.key').read_text().strip()
+        except OSError:
+            pass
+    if not key:
+        raise RuntimeError('Oracle 961 status decryption is not configured.')
+    return decrypt_status(oracle_status_bytes(), key)
+
+def public_daily_contracts():
+    try:
+        catalogue = oracle_status_payload().get('dailyContracts', {})
+    except (FileNotFoundError, OSError, RuntimeError, StatusArtifactError):
+        return {'schemaVersion': 1, 'available': False, 'contracts': [], 'message': 'Awaiting the next authenticated production round.'}
+    return {key: value for key, value in catalogue.items() if key != 'predictionBatch'}
+
+def daily_contract(contract_id):
+    if not isinstance(contract_id, str):
+        return None
+    return next((item for item in public_daily_contracts().get('contracts', []) if item.get('contractId') == contract_id), None)
+
+def private_daily_contract(contract_id):
+    if not isinstance(contract_id, str):
+        return None
+    try:
+        catalogue = oracle_status_payload().get('dailyContracts', {})
+    except (FileNotFoundError, OSError, RuntimeError, StatusArtifactError):
+        return None
+    contract = next((item for item in catalogue.get('contracts', []) if item.get('contractId') == contract_id), None)
+    return {'contract': contract, 'predictionBatch': catalogue.get('predictionBatch', [])} if contract else None
+
 @app.get('/Oracle691/stat.i')
 def oracle_status_artifact():
     try:
@@ -395,19 +444,31 @@ def oracle_status_artifact():
 @app.get('/api/oracle961/status')
 def oracle_status_json():
     """Server-side decryption boundary used by the forthcoming game UI."""
-    key = os.getenv('ORACLE_STATUS_KEY')
-    if not key and not CLOUD:
-        try:
-            key = (ROOT / 'instance/oracle961-status/status.key').read_text().strip()
-        except OSError:
-            pass
-    if not key:
-        return jsonify(error='Oracle 961 status decryption is not configured.'), 503
     try:
-        payload = decrypt_status(oracle_status_bytes(), key)
+        payload = oracle_status_payload()
     except (FileNotFoundError, OSError, RuntimeError, StatusArtifactError):
         return jsonify(error='Oracle 961 status is unavailable or failed authentication.'), 503
+    if isinstance(payload.get('dailyContracts'), dict):
+        payload['dailyContracts'] = {key: value for key, value in payload['dailyContracts'].items() if key != 'predictionBatch'}
     return jsonify(payload)
+
+@app.get('/api/oracle961/contracts')
+def oracle_daily_contracts():
+    return jsonify(public_daily_contracts())
+
+@app.get('/api/oracle961/contracts/<contract_id>/signals')
+@signed_in
+def oracle_contract_signals(contract_id):
+    now_ms = int(time.time() * 1000)
+    with store.transaction() as data:
+        holding = next((payment for payment in data['payments'].values()
+                        if payment.get('user_id') == session['uid']
+                        and payment.get('contract_id') == contract_id), None)
+    snapshot = (holding or {}).get('contract_snapshot') or {}
+    if not holding or int(snapshot.get('accessUntilMs') or 0) <= now_ms:
+        return jsonify(error='An active purchase of this contract is required.'), 403
+    return jsonify(schemaVersion=1, contract=snapshot,
+                   batchSha256=snapshot.get('batchSha256'), rows=holding.get('prediction_batch', []))
 
 @app.get('/api/oracle961/outcomes')
 def oracle_actualized_outcomes():

@@ -1,7 +1,7 @@
 'use strict';
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
-let state = {}, mode = 'login', selectedPlan = null;
+let state = {}, mode = 'login', selectedPlan = null, selectedContract = null;
 let selections = {}, resumePurchase = false;
 try { selections = JSON.parse(sessionStorage.getItem('oracleSelections') || '{}'); } catch { selections = {}; }
 if(!selections || typeof selections !== 'object' || Array.isArray(selections)) selections={};
@@ -59,6 +59,22 @@ async function refresh() {
   renderPlans(); renderHoldings();
 }
 function renderPlans() {
+  const catalogue=state.daily_contracts||{},contracts=Array.isArray(catalogue.contracts)?catalogue.contracts:[];
+  if(contracts.length){
+    $('#plan-grid').innerHTML=contracts.map((contract,index)=>{
+      const held=contract.status!=='available',fee=Number(contract.accessFeeCents||0);
+      const reasons=(contract.blockedReasons||[]).join('; ');
+      return `<article class="plan ${index===1?'popular':''}" data-contract="${escapeHTML(contract.contractId)}"><div class="plan-head"><i class="plan-icon">${contract.accessDays===1?'ϟ':contract.accessDays===3?'◇':'▤'}</i><div><p class="eyebrow">DAILY ISSUE · ${contract.accessDays} DAY</p><h3>${escapeHTML(contract.name)}</h3></div></div><p class="description">Access to up to ${Number(contract.dailyBatchSize||0)} production-qualified predictions per day for ${contract.accessDays} day${contract.accessDays===1?'':'s'}.</p><div class="price">${fee?money(fee):'HELD'}</div><p class="per-unit">Research-list access fee · bot capital stays at your exchange</p><ul><li>${Number(contract.signalEntitlementCount||0)} prediction-list entitlements</li><li>Estimated bot capital ${new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(Number(contract.estimatedBotCapitalUsd||0))}</li><li>Peak ${Number(contract.peakConcurrentPositions||0)} concurrent positions</li><li>${new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(Number(contract.perTradeCapitalUsd||0))} budget per position</li></ul><p class="plan-notice">${escapeHTML(held?(reasons||'Awaiting a fresh trade-qualified production batch.'):contract.notice)}</p><button class="primary" data-daily-buy="${escapeHTML(contract.contractId)}" ${held?'disabled':''}>${held?'Issuance held':state.user?'Review contract':'Register & continue'} <span>↗</span></button></article>`;
+    }).join('');
+    $$('[data-daily-buy]').forEach(button=>button.addEventListener('click',()=>{
+      selectedContract=contracts.find(item=>item.contractId===button.dataset.dailyBuy)||null;
+      if(!selectedContract)return;
+      if(!state.user){resumePurchase=true;authMode('register');$('#auth-dialog').showModal();}
+      else openDailyContract(selectedContract);
+    }));
+    $('#checkout-note').textContent=catalogue.available?'Three contracts are fixed for this UTC day. Access fees buy the research list only; the displayed bot-capital estimate remains in the subscriber’s own exchange account.':'Daily issuance is safely held until production supplies a fresh list whose predictions pass every trading-evidence gate.';
+    return;
+  }
   const plans = state.plans || fallbackPlans;
   $('#plan-grid').innerHTML = planOrder.map(id => {
     const p = plans[id], amount = amountFor(id);
@@ -83,6 +99,18 @@ function renderPlans() {
     else openPurchase(id);
   }));
 }
+function openDailyContract(contract){
+  selectedPlan=null;selectedContract=contract;
+  $('#purchase-title').textContent=contract.name;
+  $('#purchase-description').textContent=`${contract.dailyBatchSize} predictions per daily batch · ${contract.signalEntitlementCount} list entitlements · estimated exchange capital ${new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(Number(contract.estimatedBotCapitalUsd||0))}.`;
+  $('#purchase-price').textContent=money(contract.accessFeeCents);
+  $('#purchase-status').textContent=state.daily_contract_checkout_enabled?'The exact daily contract ID and fee will be verified by the server before Razorpay opens.':'Contract checkout is prepared but remains disabled pending commercial, legal, and payment-provider approval.';
+  $('#purchase-notice').textContent=contract.notice;
+  $('#confirm-purchase').textContent=state.daily_contract_checkout_enabled?'Continue to Razorpay →':'Checkout approval pending';
+  $('#confirm-purchase').disabled=!state.daily_contract_checkout_enabled;
+  $('#request-plan').href=`mailto:hello@delta-indices.info?subject=${encodeURIComponent(`Oracle 961 · ${contract.contractId}`)}`;
+  $('#purchase-dialog').showModal();
+}
 function renderHoldings() {
   const target = $('#holdings-content');
   if (!state.user) {
@@ -92,7 +120,8 @@ function renderHoldings() {
     target.innerHTML = '<div class="empty-state"><i>▤</i><h3>A clean slate. A new perspective.</h3><p>You have no confirmed purchases yet. Explore the available plans to get started.</p><button class="primary" id="holdings-explore">Explore plans →</button></div>';
     $('#holdings-explore').onclick = () => tab('contracts');
   } else {
-    target.innerHTML = state.holdings.map(receipt => `<article class="receipt"><div><h3>${escapeHTML(receipt.plan_name || fallbackPlans[receipt.plan]?.name || receipt.plan)}</h3><p>${escapeHTML(receipt.status)}</p><small>Payment ID: ${escapeHTML(receipt.payment_id)}</small></div><div><strong>${money(receipt.amount)}</strong><p>${escapeHTML(new Date(receipt.created*1000).toLocaleDateString())}</p><small>${receipt.environment === 'test' ? 'Test receipt · no live access' : receipt.source === 'payment_page' ? 'Verified hosted payment' : 'Payment receipt · Allocation pending'}</small></div></article>`).join('');
+    target.innerHTML = state.holdings.map(receipt => `<article class="receipt"><div><h3>${escapeHTML(receipt.plan_name || fallbackPlans[receipt.plan]?.name || receipt.plan)}</h3><p>${escapeHTML(receipt.status)}</p><small>Payment ID: ${escapeHTML(receipt.payment_id)}</small>${receipt.contract_id?`<button class="secondary" data-contract-download="${escapeHTML(receipt.contract_id)}">Download prediction list</button>`:''}</div><div><strong>${money(receipt.amount)}</strong><p>${escapeHTML(new Date(receipt.created*1000).toLocaleDateString())}</p><small>${receipt.environment === 'test' ? 'Test receipt · no live access' : receipt.source === 'payment_page' ? 'Verified hosted payment' : receipt.contract_id?'Verified daily contract':'Payment receipt · Allocation pending'}</small></div></article>`).join('');
+    $$('[data-contract-download]').forEach(button=>button.onclick=async()=>{try{const result=await api(`/api/oracle961/contracts/${encodeURIComponent(button.dataset.contractDownload)}/signals`);const url=URL.createObjectURL(new Blob([JSON.stringify(result,null,2)],{type:'application/json'}));const link=document.createElement('a');link.href=url;link.download=`${button.dataset.contractDownload}.json`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}catch(error){message(error.message);}});
   }
 }
 function tab(name) {
@@ -130,6 +159,12 @@ $('#confirm-purchase').onclick = async () => {
   if (!state.user) { resumePurchase=true; $('#purchase-dialog').close(); authMode('register'); $('#auth-dialog').showModal(); return; }
   const button=$('#confirm-purchase'); button.disabled=true;
   try {
+    if(selectedContract){
+      await loadRazorpay();
+      const order=await api('/api/checkout',{action:'order',contract_id:selectedContract.contractId,amount:selectedContract.accessFeeCents});
+      const checkout=new window.Razorpay({key:order.key,order_id:order.order_id,amount:order.amount,currency:order.currency,name:'Delta Lateral Indices',description:order.name,prefill:{name:state.user.name,email:state.user.email},theme:{color:'#287eff'},handler:async payment=>{try{const result=await api('/api/checkout',{action:'verify',...payment});$('#purchase-dialog').close();await refresh();tab('holdings');message(result.message);}catch(error){$('#purchase-status').textContent=error.message;}}});
+      checkout.open();return;
+    }
     if (state.payment_pages?.[selectedPlan]) {
       const result = await api('/api/payment-page', {plan:selectedPlan,amount:amountFor(selectedPlan)});
       location.assign(result.url);
@@ -158,7 +193,7 @@ $('#account-button').onclick=()=>{
 };
 $('#auth-form').onsubmit=async event=>{
   event.preventDefault(); const button=event.submitter;button.disabled=true;
-  try { const data=Object.fromEntries(new FormData(event.target));const result=await api(`/api/${mode === 'register'?'register':'login'}`,data);if(result.redirect){location.assign(result.redirect);return;}await refresh();$('#auth-dialog').close();event.target.reset();message(`Signed in as ${state.user.name}.`); if(resumePurchase && selectedPlan){resumePurchase=false;openPurchase(selectedPlan);} }
+  try { const data=Object.fromEntries(new FormData(event.target));const result=await api(`/api/${mode === 'register'?'register':'login'}`,data);if(result.redirect){location.assign(result.redirect);return;}await refresh();$('#auth-dialog').close();event.target.reset();message(`Signed in as ${state.user.name}.`); if(resumePurchase && selectedContract){resumePurchase=false;openDailyContract(selectedContract);} else if(resumePurchase && selectedPlan){resumePurchase=false;openPurchase(selectedPlan);} }
   catch(error){$('#auth-error').textContent=error.message;}finally{button.disabled=false;}
 };
 $('#account-form').onsubmit=async event=>{
@@ -214,11 +249,11 @@ function revealOutcome(){
 function scheduleOutcomes(){clearInterval(outcomeView.timer);if(outcomeView.visible&&outcomeView.queue.length)outcomeView.timer=setInterval(revealOutcome,2000);}
 async function loadOutcomes(){
   try{
-    const feed=await api('/api/oracle961/outcomes');outcomeView.rows=Array.isArray(feed.rows)?feed.rows:[];outcomeView.shown=Math.min(20,outcomeView.rows.length);outcomeView.queue=sequenceOutcomes(outcomeView.rows.slice(outcomeView.shown));
+    const response=await fetch('https://www.delta-indices.info/api/public/prediction-outcomes',{mode:'cors',credentials:'omit'});if(!response.ok)throw new Error('production feed unavailable');const feed=await response.json();outcomeView.rows=Array.isArray(feed.rows)?feed.rows:[];outcomeView.shown=Math.min(20,outcomeView.rows.length);outcomeView.queue=sequenceOutcomes(outcomeView.rows.slice(outcomeView.shown));
     $('#outcome-rows').innerHTML=outcomeView.rows.slice(0,outcomeView.shown).map(outcomeRow).join('')||'<tr class="outcome-placeholder"><td colspan="7">No actualized predictions are published yet.</td></tr>';
     $('#outcome-round').textContent=feed.generatedAtMs?`Round ${new Date(feed.generatedAtMs).toLocaleString()}`:'Hourly round';
-    $('#outcome-live-label').textContent=outcomeView.rows.length?'LIVE SHADOW · VERIFIED OUTCOMES':'WAITING FOR ACTUALIZED OUTCOMES';scheduleOutcomes();
-  }catch(error){$('#outcome-rows').innerHTML='<tr class="outcome-placeholder"><td colspan="7">The verified outcome feed is between hourly publications.</td></tr>';$('#outcome-live-label').textContent='HOURLY FEED TEMPORARILY UNAVAILABLE';}
+    $('#outcome-live-label').textContent=outcomeView.rows.length?'LIVE SHADOW · PRODUCTION ORACLE':'WAITING FOR ACTUALIZED OUTCOMES';scheduleOutcomes();
+  }catch(error){$('#outcome-rows').innerHTML='<tr class="outcome-placeholder"><td colspan="7">The production Oracle feed is temporarily unavailable.</td></tr>';$('#outcome-live-label').textContent='PRODUCTION FEED TEMPORARILY UNAVAILABLE';}
 }
 const outcomeStage=$('#prediction-reality');
 if(outcomeStage){
