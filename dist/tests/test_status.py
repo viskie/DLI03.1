@@ -79,6 +79,26 @@ class StatusArtifactTests(unittest.TestCase):
         self.assertNotEqual(catalogue['contracts'][0]['accessFeeCents'],
                             catalogue['contracts'][0]['estimatedBotCapitalInr'] * 100)
 
+    def test_poc_contracts_publish_ranked_rows_without_trade_qualification(self):
+        source = {
+            'generatedAtMs': 3_599_000, 'scopeStatus': 'ready', 'scopeId': 'scope',
+            'sourceInstance': 'o369', 'sourceInstanceKey': 'instance-2',
+            'issuanceMode': 'poc-research', 'tradeEligibleNowCount': 0,
+            'blockedReasons': ['low-confidence'],
+            'tradeQuantum': {'investmentInr': 1055},
+            'usdInr': {'rate': 84.4, 'observedAtMs': 3_599_000, 'basis': 'test'},
+            'rows': [{'rank': 1, 'market': 'BTC/INR', 'forecastHorizonSeconds': 900,
+                      'signalId': 'poc-a', 'tradeQualified': False}],
+        }
+        catalogue = build_daily_contracts(source, now_ms=3_600_000,
+                                           prediction_quantum_reference_usd=1.0)
+        self.assertTrue(catalogue['available'])
+        self.assertTrue(catalogue['proofOfConcept'])
+        self.assertEqual(catalogue['contracts'][0]['status'], 'available')
+        self.assertFalse(catalogue['contracts'][0]['tradeQualified'])
+        self.assertFalse(catalogue['contracts'][0]['executionEligible'])
+        self.assertIn('low-confidence', catalogue['contracts'][0]['sourceWarnings'])
+
     def test_authenticated_round_trip_and_wrong_key(self):
         payload = build_status(self.instance, now_ms=3_600_000)
         key = Fernet.generate_key()

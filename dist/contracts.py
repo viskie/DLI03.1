@@ -58,6 +58,8 @@ def build_daily_contracts(
     source = source if isinstance(source, dict) else {}
     source_instance = str(source.get("sourceInstance") or "o369")
     source_instance_key = str(source.get("sourceInstanceKey") or "instance-2")
+    issuance_mode = str(source.get("issuanceMode") or "qualified")
+    poc_mode = issuance_mode == "poc-research"
     day_id, issued_at_ms, purchase_until_ms = _utc_day(now_ms)
     source_rows = source.get("rows") if isinstance(source.get("rows"), list) else []
     rows = [row for row in source_rows if isinstance(row, dict)]
@@ -73,7 +75,7 @@ def build_daily_contracts(
     blocked = [str(value) for value in source.get("blockedReasons", []) if value]
     source_ready = (
         source.get("scopeStatus") == "ready"
-        and int(source.get("tradeEligibleNowCount") or 0) > 0
+        and (poc_mode or int(source.get("tradeEligibleNowCount") or 0) > 0)
         and bool(rows)
         and source_age_seconds is not None
         and source_age_seconds <= 330
@@ -92,7 +94,8 @@ def build_daily_contracts(
             for key in (
                 "rank", "market", "direction", "originAtMs", "targetAtMs",
                 "forecastHorizonSeconds", "spotPrice", "predictedPrice",
-                "deltaPercent", "confidence", "signalId",
+                "deltaPercent", "confidence", "signalId", "tradeQualified",
+                "tradeBlockers",
             )
         }
         for row in rows
@@ -120,7 +123,7 @@ def build_daily_contracts(
         }
         contracts.append({
             "contractId": "O961-" + _canonical_digest(identity)[:20].upper(),
-            "name": f"Oracle 961 · {days}-day bot list",
+            "name": f"Oracle 961 POC · {days}-day research list" if poc_mode else f"Oracle 961 · {days}-day bot list",
             "accessDays": days,
             "status": "available" if source_ready else "held",
             "currency": "USD",
@@ -144,9 +147,18 @@ def build_daily_contracts(
             "modelSha256": source.get("modelSha256"),
             "sourceInstance": source_instance,
             "sourceInstanceKey": source_instance_key,
+            "issuanceMode": issuance_mode,
+            "proofOfConcept": poc_mode,
+            "tradeQualified": not poc_mode,
+            "executionEligible": False,
             "batchSha256": batch_hash,
             "blockedReasons": [] if source_ready else blocked,
-            "notice": "Access to a research prediction list. Subscriber exchange capital remains separate and is never collected by this contract.",
+            "sourceWarnings": blocked if poc_mode else [],
+            "notice": (
+                "Proof-of-concept access to a research-ranked prediction list. Predictions are not trade-qualified; no execution or return is promised. Subscriber exchange capital remains separate."
+                if poc_mode else
+                "Access to a research prediction list. Subscriber exchange capital remains separate and is never collected by this contract."
+            ),
         })
     return {
         "schemaVersion": 1,
@@ -159,6 +171,8 @@ def build_daily_contracts(
         "sourceScopeId": source.get("scopeId"),
         "sourceInstance": source_instance,
         "sourceInstanceKey": source_instance_key,
+        "issuanceMode": issuance_mode,
+        "proofOfConcept": poc_mode,
         "sourceBatchSha256": batch_hash,
         "available": source_ready,
         "contracts": contracts,
@@ -171,5 +185,6 @@ def build_daily_contracts(
             "capitalFormula": "ceil(peak overlapping positions * per-trade INR budget * (1 + reserve percent))",
             "accessFeeFormula": "ceil(signal entitlements * hourly prediction-quantum USD reference * duration discount)",
             "durationDiscounts": {str(key): value for key, value in DISCOUNT_BY_DAYS.items()},
+            "pocMeaning": "Available means research-access inventory is published; it does not mean trade qualification or execution eligibility.",
         },
     }
