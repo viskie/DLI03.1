@@ -341,6 +341,7 @@ def generate(*, instance: Path, output: Path, archive: Path, key_file: Path,
             if (
                 previous_contracts.get("issueDate") == current_contracts.get("issueDate")
                 and previous_contracts.get("available") is True
+                and previous_contracts.get("catalogueVersion") == current_contracts.get("catalogueVersion")
             ):
                 # Once a day's three contracts are available, their prediction
                 # batch, IDs, prices, and capital disclosure stay immutable.

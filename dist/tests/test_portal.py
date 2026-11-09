@@ -108,6 +108,20 @@ class PortalTests(unittest.TestCase):
             self.assertEqual(signals.status_code,200)
             self.assertEqual(signals.json['rows'][0]['market'],'BTC/INR')
 
+    def test_private_contract_uses_its_window_specific_batch(self):
+        contract = {'contractId':'O961-THREE','accessDays':3}
+        catalogue = {
+            'contracts':[contract],
+            'predictionBatch':[{'market':'FALLBACK/INR'}],
+            'predictionBatches':{'O961-THREE':[{'market':'THREE/INR'}]},
+        }
+        with patch.object(module,'oracle_status_payload',return_value={'dailyContracts':catalogue}):
+            public = module.public_daily_contracts()
+            self.assertNotIn('predictionBatch', public)
+            self.assertNotIn('predictionBatches', public)
+            private = module.private_daily_contract('O961-THREE')
+            self.assertEqual(private['predictionBatch'],[{'market':'THREE/INR'}])
+
     def test_social_registration_and_returning_signin(self):
         for provider in ('google','facebook','linkedin'):
             info={'sub':provider+'-123','email':provider+'@example.test','name':'Social User','email_verified':True}

@@ -13,7 +13,6 @@ from typing import Any
 
 
 CONTRACT_DURATIONS = (1, 3, 9)
-DEFAULT_DAILY_SIGNAL_CAP = 30
 DEFAULT_CAPITAL_RESERVE_PERCENT = 10.0
 DISCOUNT_BY_DAYS = {1: 1.0, 3: 0.90, 9: 0.75}
 
@@ -52,7 +51,7 @@ def build_daily_contracts(
     *,
     now_ms: int,
     prediction_quantum_reference_usd: float,
-    daily_signal_cap: int = DEFAULT_DAILY_SIGNAL_CAP,
+    daily_signal_cap: int | None = None,
     capital_reserve_percent: float = DEFAULT_CAPITAL_RESERVE_PERCENT,
 ) -> dict[str, Any]:
     source = source if isinstance(source, dict) else {}
@@ -64,7 +63,8 @@ def build_daily_contracts(
     source_rows = source.get("rows") if isinstance(source.get("rows"), list) else []
     rows = [row for row in source_rows if isinstance(row, dict)]
     rows.sort(key=lambda row: (int(row.get("rank") or 10**9), str(row.get("market") or "")))
-    rows = rows[:max(1, int(daily_signal_cap))]
+    if daily_signal_cap is not None and int(daily_signal_cap) > 0:
+        rows = rows[:int(daily_signal_cap)]
     generated_at_ms = int(source.get("generatedAtMs") or 0)
     source_age_seconds = max(0.0, (now_ms - generated_at_ms) / 1000) if generated_at_ms else None
     fx = source.get("usdInr") if isinstance(source.get("usdInr"), dict) else {}
@@ -88,7 +88,7 @@ def build_daily_contracts(
 
     quantum = source.get("tradeQuantum") if isinstance(source.get("tradeQuantum"), dict) else {}
     per_trade_inr = float(quantum.get("investmentInr") or 1055.0)
-    batch_rows = [
+    all_batch_rows = [
         {
             key: row.get(key)
             for key in (
@@ -100,11 +100,31 @@ def build_daily_contracts(
         }
         for row in rows
     ]
-    batch_hash = _canonical_digest(batch_rows)
+    source_batch_hash = _canonical_digest(all_batch_rows)
     contracts = []
+    prediction_batches: dict[str, list[dict[str, Any]]] = {}
     for days in CONTRACT_DURATIONS:
-        entitlements = len(rows) * days
-        peak = _peak_concurrency(rows, days) if rows else 0
+        access_until_ms = issued_at_ms + days * 86_400_000
+        contract_rows = [
+            row for row in rows
+            if issued_at_ms <= int(row.get("targetAtMs") or 0) <= access_until_ms
+        ]
+        contract_batch = [
+            {
+                key: row.get(key)
+                for key in (
+                    "rank", "market", "direction", "originAtMs", "targetAtMs",
+                    "forecastHorizonSeconds", "spotPrice", "predictedPrice",
+                    "deltaPercent", "confidence", "signalId", "tradeQualified",
+                    "tradeBlockers",
+                )
+            }
+            for row in contract_rows
+        ]
+        batch_hash = _canonical_digest(contract_batch)
+        contract_ready = source_ready and bool(contract_batch)
+        entitlements = len(contract_batch) * days
+        peak = _peak_concurrency(contract_rows, days) if contract_rows else 0
         capital = math.ceil(peak * per_trade_inr * (1 + capital_reserve_percent / 100))
         per_trade_usd = per_trade_inr / usd_inr_rate if fx_ready else 0.0
         capital_usd = capital / usd_inr_rate if fx_ready else 0.0
@@ -113,7 +133,7 @@ def build_daily_contracts(
             * max(0.01, float(prediction_quantum_reference_usd))
             * DISCOUNT_BY_DAYS[days]
             * 100
-        )) if rows else 0
+        )) if contract_batch else 0
         identity = {
             "issueDate": day_id,
             "accessDays": days,
@@ -121,14 +141,16 @@ def build_daily_contracts(
             "batchSha256": batch_hash,
             "sourceInstance": source_instance,
         }
+        contract_id = "O961-" + _canonical_digest(identity)[:20].upper()
+        prediction_batches[contract_id] = contract_batch
         contracts.append({
-            "contractId": "O961-" + _canonical_digest(identity)[:20].upper(),
+            "contractId": contract_id,
             "name": f"Oracle 961 POC · {days}-day research list" if poc_mode else f"Oracle 961 · {days}-day bot list",
             "accessDays": days,
-            "status": "available" if source_ready else "held",
+            "status": "available" if contract_ready else "held",
             "currency": "USD",
             "accessFeeCents": access_fee_cents,
-            "dailyBatchSize": len(rows),
+            "dailyBatchSize": len(contract_batch),
             "signalEntitlementCount": entitlements,
             "peakConcurrentPositions": peak,
             "perTradeCapitalInr": per_trade_inr,
@@ -141,7 +163,7 @@ def build_daily_contracts(
             "capitalReservePercent": capital_reserve_percent,
             "issuedAtMs": issued_at_ms,
             "purchaseUntilMs": purchase_until_ms,
-            "accessUntilMs": issued_at_ms + days * 86_400_000,
+            "accessUntilMs": access_until_ms,
             "scopeId": source.get("scopeId"),
             "forecastConfigId": source.get("forecastConfigId"),
             "modelSha256": source.get("modelSha256"),
@@ -152,7 +174,10 @@ def build_daily_contracts(
             "tradeQualified": not poc_mode,
             "executionEligible": False,
             "batchSha256": batch_hash,
-            "blockedReasons": [] if source_ready else blocked,
+            "blockedReasons": [] if contract_ready else (
+                blocked if not source_ready else
+                ["No available predictions have a target inside this contract window"]
+            ),
             "sourceWarnings": blocked if poc_mode else [],
             "notice": (
                 "Proof-of-concept access to a research-ranked prediction list. Predictions are not trade-qualified; no execution or return is promised. Subscriber exchange capital remains separate."
@@ -161,7 +186,8 @@ def build_daily_contracts(
             ),
         })
     return {
-        "schemaVersion": 1,
+        "schemaVersion": 2,
+        "catalogueVersion": "all-window-targets-v2",
         "issueDate": day_id,
         "generatedAtMs": now_ms,
         "sourceGeneratedAtMs": generated_at_ms or None,
@@ -173,12 +199,13 @@ def build_daily_contracts(
         "sourceInstanceKey": source_instance_key,
         "issuanceMode": issuance_mode,
         "proofOfConcept": poc_mode,
-        "sourceBatchSha256": batch_hash,
-        "available": source_ready,
+        "sourceBatchSha256": source_batch_hash,
+        "available": any(item["status"] == "available" for item in contracts),
         "contracts": contracts,
         # Kept only inside the encrypted status artifact. Public endpoints must
         # remove this field unless the signed-in account owns the contract.
-        "predictionBatch": batch_rows,
+        "predictionBatch": all_batch_rows,
+        "predictionBatches": prediction_batches,
         "methodology": {
             "dailyIssueCount": 3,
             "durationsDays": list(CONTRACT_DURATIONS),
@@ -186,5 +213,6 @@ def build_daily_contracts(
             "accessFeeFormula": "ceil(signal entitlements * hourly prediction-quantum USD reference * duration discount)",
             "durationDiscounts": {str(key): value for key, value in DISCOUNT_BY_DAYS.items()},
             "pocMeaning": "Available means research-access inventory is published; it does not mean trade qualification or execution eligibility.",
+            "batchSelection": "all ranked predictions whose targetAtMs falls between the UTC issue boundary and the contract accessUntilMs; no fixed row cap",
         },
     }

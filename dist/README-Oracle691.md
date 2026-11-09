@@ -53,6 +53,12 @@ without describing it as trade-qualified. Contracts expose
 preserve row-level trade blockers. “Available” means research-list access is
 available; it does not authorize execution or promise a return.
 
+There is no fixed 30-row cap. Each contract includes every currently available
+ranked prediction whose `targetAtMs` falls inside its 1-, 3-, or 9-day access
+window. Private batches are stored separately by contract ID inside the
+encrypted artifact; public responses expose counts and hashes but remove both
+`predictionBatch` and `predictionBatches`.
+
 The contract engine is `contracts.py`, the storefront is
 `public/Oracle691/oracle.js`, and regression coverage is in
 `tests/test_status.py`. After deploying the committed `dist` tree to Vercel,

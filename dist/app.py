@@ -411,7 +411,8 @@ def public_daily_contracts():
         catalogue = oracle_status_payload().get('dailyContracts', {})
     except (FileNotFoundError, OSError, RuntimeError, StatusArtifactError):
         return {'schemaVersion': 1, 'available': False, 'contracts': [], 'message': 'Awaiting the next authenticated production round.'}
-    return {key: value for key, value in catalogue.items() if key != 'predictionBatch'}
+    return {key: value for key, value in catalogue.items()
+            if key not in {'predictionBatch', 'predictionBatches'}}
 
 def daily_contract(contract_id):
     if not isinstance(contract_id, str):
@@ -426,7 +427,11 @@ def private_daily_contract(contract_id):
     except (FileNotFoundError, OSError, RuntimeError, StatusArtifactError):
         return None
     contract = next((item for item in catalogue.get('contracts', []) if item.get('contractId') == contract_id), None)
-    return {'contract': contract, 'predictionBatch': catalogue.get('predictionBatch', [])} if contract else None
+    batches = catalogue.get('predictionBatches', {})
+    batch = batches.get(contract_id, []) if isinstance(batches, dict) else []
+    if not batch:
+        batch = catalogue.get('predictionBatch', [])
+    return {'contract': contract, 'predictionBatch': batch} if contract else None
 
 @app.get('/Oracle691/stat.i')
 def oracle_status_artifact():
@@ -449,7 +454,10 @@ def oracle_status_json():
     except (FileNotFoundError, OSError, RuntimeError, StatusArtifactError):
         return jsonify(error='Oracle 961 status is unavailable or failed authentication.'), 503
     if isinstance(payload.get('dailyContracts'), dict):
-        payload['dailyContracts'] = {key: value for key, value in payload['dailyContracts'].items() if key != 'predictionBatch'}
+        payload['dailyContracts'] = {
+            key: value for key, value in payload['dailyContracts'].items()
+            if key not in {'predictionBatch', 'predictionBatches'}
+        }
     return jsonify(payload)
 
 @app.get('/api/oracle961/contracts')
