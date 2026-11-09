@@ -71,6 +71,151 @@ def _camel(name: str) -> str:
 PUBLISHED_OUTCOME_LIMIT = 1_000
 
 
+def _outcome_key(row: dict[str, Any]) -> tuple[str, int, int]:
+    return (
+        str(row.get("market") or ""),
+        int(row.get("originAtMs") or 0),
+        int(row.get("targetAtMs") or 0),
+    )
+
+
+def _matured_contract_simulations(
+    archive: Path, key: bytes, now_ms: int
+) -> dict[str, Any]:
+    """Reconstruct expired Plan 3 batches against authenticated outcomes.
+
+    The newest catalogue for each UTC issue day and duration wins, which avoids
+    listing superseded catalogue-schema revisions as separate contracts. No
+    unresolved row is assigned a fabricated price or profit.
+    """
+    contracts: dict[tuple[str, int], tuple[dict[str, Any], list[dict[str, Any]]]] = {}
+    outcomes: dict[tuple[str, int, int], dict[str, Any]] = {}
+    for path in sorted(archive.glob("*.stat.i")):
+        try:
+            payload = decrypt_status(path.read_bytes(), key)
+        except Exception:
+            continue
+        log = payload.get("predictionLogs", {}).get("actualized", {})
+        for row in log.get("rows", []) if isinstance(log, dict) else []:
+            if isinstance(row, dict) and row.get("actualPrice") is not None:
+                outcomes[_outcome_key(row)] = row
+        catalogue = payload.get("dailyContracts", {})
+        if not isinstance(catalogue, dict):
+            continue
+        batches = catalogue.get("predictionBatches", {})
+        fallback = catalogue.get("predictionBatch", [])
+        for contract in catalogue.get("contracts", []):
+            if not isinstance(contract, dict):
+                continue
+            contract_id = contract.get("contractId")
+            batch = batches.get(contract_id, []) if isinstance(batches, dict) else []
+            if not batch and isinstance(fallback, list):
+                batch = fallback
+            if not contract_id or not isinstance(batch, list) or not batch:
+                continue
+            issue_date = str(catalogue.get("issueDate") or "")
+            duration = int(contract.get("accessDays") or 0)
+            contracts[(issue_date, duration)] = (contract, batch)
+
+    reports = []
+    for (issue_date, duration), (contract, batch) in sorted(contracts.items()):
+        target_at_ms = max(int(row.get("targetAtMs") or 0) for row in batch)
+        access_until_ms = int(contract.get("accessUntilMs") or 0)
+        matured_at_ms = max(target_at_ms, access_until_ms)
+        if matured_at_ms <= 0 or matured_at_ms > now_ms:
+            continue
+        per_trade_usd = float(contract.get("perTradeCapitalUsd") or 0)
+        realized = wins = losses = flat = 0
+        gross_profit_loss = 0.0
+        resolved_rows = []
+        for prediction in batch:
+            outcome = outcomes.get(_outcome_key(prediction))
+            if not outcome:
+                continue
+            entry = float(prediction.get("spotPrice") or outcome.get("basePrice") or 0)
+            predicted = float(prediction.get("predictedPrice") or outcome.get("predictedPrice") or 0)
+            actual = float(outcome.get("actualPrice") or 0)
+            if entry <= 0 or predicted <= 0 or actual <= 0 or per_trade_usd <= 0:
+                continue
+            direction = str(prediction.get("direction") or "").lower()
+            sign = -1.0 if direction in {"down", "short", "sell", "-1"} else 1.0
+            if direction not in {"down", "short", "sell", "-1", "up", "long", "buy", "1"}:
+                sign = 1.0 if predicted >= entry else -1.0
+            profit_loss = per_trade_usd * ((actual - entry) / entry) * sign
+            gross_profit_loss += profit_loss
+            realized += 1
+            wins += profit_loss > 0
+            losses += profit_loss < 0
+            flat += profit_loss == 0
+            resolved_rows.append({
+                "market": prediction.get("market"),
+                "originAtMs": prediction.get("originAtMs"),
+                "targetAtMs": prediction.get("targetAtMs"),
+                "direction": "short" if sign < 0 else "long",
+                "entryPrice": entry,
+                "actualPrice": actual,
+                "capitalUsd": round(per_trade_usd, 2),
+                "grossProfitLossUsd": round(profit_loss, 6),
+                "resolutionSource": outcome.get("resolutionSource"),
+            })
+        batch_count = len(batch)
+        unresolved = batch_count - realized
+        realized_capital = per_trade_usd * realized
+        report_identity = {
+            "contractId": contract.get("contractId"),
+            "batchSha256": contract.get("batchSha256"),
+            "maturedAtMs": matured_at_ms,
+            "realizedCount": realized,
+        }
+        reports.append({
+            "reportId": "O961-SIM-" + hashlib.sha256(json.dumps(
+                report_identity, sort_keys=True, separators=(",", ":")
+            ).encode()).hexdigest()[:20].upper(),
+            "contractId": contract.get("contractId"),
+            "name": contract.get("name"),
+            "issueDate": issue_date,
+            "accessDays": duration,
+            "issuedAtMs": contract.get("issuedAtMs"),
+            "accessUntilMs": access_until_ms,
+            "maturedAtMs": matured_at_ms,
+            "batchSha256": contract.get("batchSha256"),
+            "modelSha256": contract.get("modelSha256"),
+            "simulationStatus": "complete" if unresolved == 0 else "partial",
+            "batchCount": batch_count,
+            "realizedCount": realized,
+            "unresolvedCount": unresolved,
+            "outcomeCoveragePercent": round(100 * realized / batch_count, 4),
+            "winningTrades": wins,
+            "losingTrades": losses,
+            "flatTrades": flat,
+            "directionAccuracyPercent": round(100 * wins / realized, 4) if realized else None,
+            "perTradeCapitalUsd": round(per_trade_usd, 2),
+            "fullBatchCapitalUsd": round(per_trade_usd * batch_count, 2),
+            "realizedCapitalUsd": round(realized_capital, 2),
+            "grossProfitLossUsd": round(gross_profit_loss, 6),
+            "grossReturnPercent": round(100 * gross_profit_loss / realized_capital, 6)
+            if realized_capital else None,
+            "contractPriceCents": contract.get("contractPriceCents") or contract.get("accessFeeCents"),
+            "requiredExchangeCapitalCents": contract.get("requiredExchangeCapitalCents"),
+            "rows": resolved_rows,
+        })
+    reports.sort(key=lambda row: (int(row.get("maturedAtMs") or 0), int(row.get("accessDays") or 0)), reverse=True)
+    return {
+        "schemaVersion": 1,
+        "generatedAtMs": now_ms,
+        "matureContractCount": len(reports),
+        "contracts": reports,
+        "assumptions": {
+            "positionSizing": "one full per-trade budget for every prediction; no capital reuse",
+            "direction": "long when forecast is above entry and short when below entry",
+            "valuation": "entry at recorded spot price and exit at authenticated actual target price",
+            "costs": "gross directional P&L only; exchange fees, funding, taxes, spread, slippage and bot hosting are excluded",
+            "unresolved": "unmatched outcomes are excluded from P&L and reported separately",
+            "notice": "counterfactual historical simulation; not executed profit and not a promise of future performance",
+        },
+    }
+
+
 def _outcomes(database: Path) -> tuple[list[dict[str, Any]], list[dict[str, Any]], int, int]:
     if not database.is_file():
         raise FileNotFoundError(f"prediction outcome database is unavailable: {database}")
@@ -332,6 +477,9 @@ def generate(*, instance: Path, output: Path, archive: Path, key_file: Path,
         previous_artifact_sha256=previous,
         remote_outcomes=remote_outcomes,
         contract_source=contract_source,
+    )
+    payload["maturedContractSimulations"] = _matured_contract_simulations(
+        archive, key, int(time.time() * 1000) if now_ms is None else int(now_ms)
     )
     if output.is_file():
         try:

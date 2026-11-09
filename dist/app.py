@@ -414,6 +414,15 @@ def public_daily_contracts():
     return {key: value for key, value in catalogue.items()
             if key not in {'predictionBatch', 'predictionBatches'}}
 
+def matured_contract_simulations():
+    try:
+        value = oracle_status_payload().get('maturedContractSimulations', {})
+    except (FileNotFoundError, OSError, RuntimeError, StatusArtifactError):
+        return {'schemaVersion': 1, 'matureContractCount': 0, 'contracts': [],
+                'message': 'Mature-contract archive analysis is unavailable.'}
+    return value if isinstance(value, dict) else {
+        'schemaVersion': 1, 'matureContractCount': 0, 'contracts': []}
+
 def daily_contract(contract_id):
     if not isinstance(contract_id, str):
         return None
@@ -450,7 +459,7 @@ def oracle_status_artifact():
 def oracle_status_json():
     """Server-side decryption boundary used by the forthcoming game UI."""
     try:
-        payload = oracle_status_payload()
+        payload = dict(oracle_status_payload())
     except (FileNotFoundError, OSError, RuntimeError, StatusArtifactError):
         return jsonify(error='Oracle 961 status is unavailable or failed authentication.'), 503
     if isinstance(payload.get('dailyContracts'), dict):
@@ -458,6 +467,7 @@ def oracle_status_json():
             key: value for key, value in payload['dailyContracts'].items()
             if key not in {'predictionBatch', 'predictionBatches'}
         }
+    payload.pop('maturedContractSimulations', None)
     return jsonify(payload)
 
 @app.get('/api/oracle961/contracts')
@@ -524,7 +534,8 @@ if CLOUD:
     def concurrent_write(error):
         return jsonify(error='Another request updated this account. Please retry.'), 409
 
-init_admin(app, store, oauth, register_oauth_providers, public_daily_contracts)
+init_admin(app, store, oauth, register_oauth_providers,
+           public_daily_contracts, matured_contract_simulations)
 
 if __name__ == '__main__':
     app.run(host='127.0.0.1', port=8000, debug=False)

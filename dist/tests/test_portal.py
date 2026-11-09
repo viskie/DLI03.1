@@ -122,6 +122,18 @@ class PortalTests(unittest.TestCase):
             private = module.private_daily_contract('O961-THREE')
             self.assertEqual(private['predictionBatch'],[{'market':'THREE/INR'}])
 
+    def test_mature_simulations_stay_admin_only(self):
+        payload = {
+            'dailyContracts': {'contracts': []},
+            'maturedContractSimulations': {'matureContractCount': 1,
+                'contracts': [{'reportId': 'PRIVATE-SIM'}]},
+        }
+        with patch.object(module,'oracle_status_payload',return_value=payload):
+            self.assertNotIn('maturedContractSimulations',
+                             self.client.get('/api/oracle961/status').json)
+            self.assertEqual(module.matured_contract_simulations()['contracts'][0]['reportId'],
+                             'PRIVATE-SIM')
+
     def test_social_registration_and_returning_signin(self):
         for provider in ('google','facebook','linkedin'):
             info={'sub':provider+'-123','email':provider+'@example.test','name':'Social User','email_verified':True}

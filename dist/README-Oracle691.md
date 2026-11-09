@@ -53,11 +53,39 @@ without describing it as trade-qualified. Contracts expose
 preserve row-level trade blockers. “Available” means research-list access is
 available; it does not authorize execution or promise a return.
 
-There is no fixed 30-row cap. Each contract includes every currently available
-ranked prediction whose `targetAtMs` falls inside its 1-, 3-, or 9-day access
-window. Private batches are stored separately by contract ID inside the
+The current contract caps are 30, 100 and 300 predictions for the 1-, 3- and
+9-day products. Each contract selects the available ranked predictions whose
+`targetAtMs` falls inside its access window, up to that cap. Private batches are stored separately by contract ID inside the
 encrypted artifact; public responses expose counts and hashes but remove both
 `predictionBatch` and `predictionBatches`.
+
+Plan 3 contract price is the rounded-up full-batch exchange-capital estimate,
+subject to a USD 10,000 maximum. The required exchange capital remains separate
+and subscriber-controlled, so the admin panel discloses purchase price,
+exchange capital and combined known cash independently. Bot execution remains
+disabled until a bot and its commercial/legal operating model are defined.
+
+### Mature-contract counterfactual replay
+
+The hourly publisher keeps encrypted, hash-chained status archives for 90 days.
+For the admin-only mature-contract report, it selects the latest catalogue
+revision for each UTC issue day and duration, requires both contract expiry and
+the final prediction target to be in the past, then matches each batch row to an
+authenticated actualized outcome by market, origin timestamp and target
+timestamp. Unmatched outcomes are excluded and counted; they are never assigned
+fabricated prices.
+
+Gross directional P&L uses one recorded per-trade budget for every prediction,
+entry at the recorded spot price, and exit at the authenticated actual target
+price. It assumes a long position when the forecast is above entry and a short
+position when below. Exchange fees, funding, taxes, spread, slippage and bot
+hosting are excluded until those parameters are defined. The result is a
+counterfactual historical simulation, not executed profit or a return promise.
+
+Implementation: `_matured_contract_simulations` in `status_generator.py` builds
+the report, `app.py` keeps it out of the public status endpoint, and the
+administrator selects reports under **Plan 3 actualization**. A new report
+appears after the next hourly publication following maturity.
 
 The contract engine is `contracts.py`, the storefront is
 `public/Oracle691/oracle.js`, and regression coverage is in
@@ -71,7 +99,11 @@ From the workspace parent: `.venv/bin/python -m unittest discover -s portal/test
 
 ## Deployment status
 
-Not deployed: local review was requested before deployment. Existing Vercel project linkage was retained. Ordinary Vercel functions have an ephemeral filesystem, so neither encrypted files nor SQLite provide durable accounts there. The app refuses to start on Vercel to prevent accidental account loss. A persistent Python service can run this backend and keep its encrypted files, with Vercel hosting/proxying the frontend; that hosting arrangement remains to be chosen. Do not deploy this as if it were a working Vercel-only account backend.
+The portal is deployed at `https://www.delta-indices.net/Oracle691`. Vercel
+serves the Python portal while durable encrypted status is published to the
+configured Blob store by the laptop's hourly `oracle961-status.service`. The
+publisher's local encrypted archives are the evidence source for mature-contract
+simulation and must be retained with their encryption key.
 
 ## Administration
 

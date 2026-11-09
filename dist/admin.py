@@ -51,7 +51,8 @@ def audit(data, action, target=''):
 def clean_user(user):
     return {key: user.get(key, default) for key, default in [('id',''),('name',''),('email',''),('provider','password'),('role','member'),('disabled',False),('created',None)]}
 
-def init_admin(app, store, oauth, reload_providers, contracts_provider=None):
+def init_admin(app, store, oauth, reload_providers, contracts_provider=None,
+               simulations_provider=None):
     # Saved provider settings override process defaults; no secret values are returned by the API.
     with store.transaction() as data:
         saved = data.get('provider_settings', {})
@@ -120,8 +121,11 @@ def init_admin(app, store, oauth, reload_providers, contracts_provider=None):
         for payment in live_payments:
             totals[payment['plan']] += payment['amount']
         catalogue = contracts_provider() if contracts_provider else {'available': False, 'contracts': []}
+        simulations = simulations_provider() if simulations_provider else {
+            'matureContractCount': 0, 'contracts': []}
         return jsonify(users=users, payments=payments, orders=orders, analytics=analytics, audit=rows, profile=profile,
                        daily_contracts=catalogue,
+                       matured_contract_simulations=simulations,
                        summary={'users':len(users), 'active':sum(not u['disabled'] for u in users), 'payments':len(live_payments),
                                 'revenue':sum(p['amount'] for p in live_payments), 'orders':len(orders)}, revenue_by_plan=dict(totals))
 

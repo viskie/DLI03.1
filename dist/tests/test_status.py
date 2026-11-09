@@ -7,7 +7,7 @@ from pathlib import Path
 from cryptography.fernet import Fernet
 
 from status_artifact import StatusArtifactError, decrypt_status, encrypt_status
-from status_generator import build_status
+from status_generator import build_status, _matured_contract_simulations
 from contracts import build_daily_contracts
 
 
@@ -157,6 +157,47 @@ class StatusArtifactTests(unittest.TestCase):
         self.assertTrue(all(item['status'] == 'held' for item in catalogue['contracts']))
         self.assertTrue(all('10,000' in item['blockedReasons'][0]
                             for item in catalogue['contracts']))
+
+    def test_mature_contract_simulation_uses_only_authenticated_realizations(self):
+        archive = Path(self.temporary.name) / 'archive'
+        archive.mkdir()
+        key = Fernet.generate_key()
+        batch = [
+            {'market':'BTC/USDT','originAtMs':1000,'targetAtMs':2000,
+             'spotPrice':100.0,'predictedPrice':110.0,'direction':'up'},
+            {'market':'ETH/USDT','originAtMs':1000,'targetAtMs':3000,
+             'spotPrice':100.0,'predictedPrice':90.0,'direction':'down'},
+            {'market':'MISSING/USDT','originAtMs':1000,'targetAtMs':4000,
+             'spotPrice':100.0,'predictedPrice':110.0,'direction':'up'},
+        ]
+        payload = {
+            'schemaVersion': 1,
+            'dailyContracts': {
+                'issueDate':'2026-11-01',
+                'contracts':[{'contractId':'O961-MATURE','name':'Mature test','accessDays':1,
+                              'accessUntilMs':5000,'issuedAtMs':100,'perTradeCapitalUsd':100.0,
+                              'batchSha256':'batch','modelSha256':'model','contractPriceCents':30000,
+                              'requiredExchangeCapitalCents':30000}],
+                'predictionBatches':{'O961-MATURE':batch},
+            },
+            'predictionLogs': {'actualized': {'rows':[
+                {'market':'BTC/USDT','originAtMs':1000,'targetAtMs':2000,
+                 'basePrice':100.0,'predictedPrice':110.0,'actualPrice':120.0,
+                 'resolutionSource':'live'},
+                {'market':'ETH/USDT','originAtMs':1000,'targetAtMs':3000,
+                 'basePrice':100.0,'predictedPrice':90.0,'actualPrice':80.0,
+                 'resolutionSource':'repaired'},
+            ]}},
+        }
+        (archive/'2026-11-02T00-00-00Z.stat.i').write_bytes(encrypt_status(payload,key))
+        result = _matured_contract_simulations(archive,key,now_ms=10_000)
+        report = result['contracts'][0]
+        self.assertEqual(report['simulationStatus'],'partial')
+        self.assertEqual(report['realizedCount'],2)
+        self.assertEqual(report['unresolvedCount'],1)
+        self.assertEqual(report['winningTrades'],2)
+        self.assertAlmostEqual(report['grossProfitLossUsd'],40.0)
+        self.assertAlmostEqual(report['grossReturnPercent'],20.0)
 
     def test_authenticated_round_trip_and_wrong_key(self):
         payload = build_status(self.instance, now_ms=3_600_000)
