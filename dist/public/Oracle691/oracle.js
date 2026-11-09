@@ -60,28 +60,17 @@ async function refresh() {
 }
 function renderPlans() {
   const catalogue=state.daily_contracts||{},contracts=Array.isArray(catalogue.contracts)?catalogue.contracts:[];
-  if(contracts.length){
-    $('#plan-grid').innerHTML=contracts.map((contract,index)=>{
-      const held=contract.status!=='available',fee=Number(contract.accessFeeCents||0);
-      const poc=contract.proofOfConcept===true;
-      const reasons=(contract.blockedReasons||[]).join('; ');
-      return `<article class="plan ${index===1?'popular':''}" data-contract="${escapeHTML(contract.contractId)}"><div class="plan-head"><i class="plan-icon">${contract.accessDays===1?'ϟ':contract.accessDays===3?'◇':'▤'}</i><div><p class="eyebrow">${poc?'PROOF OF CONCEPT':'DAILY ISSUE'} · ${contract.accessDays} DAY</p><h3>${escapeHTML(contract.name)}</h3></div></div><p class="description">${Number(contract.predictionCount||contract.dailyBatchSize||0)} currently available ${poc?'research-ranked, non-trade-qualified':'production-qualified'} predictions, from a contract capacity of ${Number(contract.predictionCap||0)}.</p><div class="price">${fee?money(fee):'HELD'}</div><p class="per-unit">Research-list access fee · trading capital stays at your exchange</p><ul><li>Up to ${Number(contract.predictionCap||0)} ranked predictions</li><li>${Number(contract.signalEntitlementCount||0)} term-priced prediction entitlements</li><li>Gross batch capital ${new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(Number(contract.grossBatchCapitalUsd||0))}</li><li>Required exchange capital with ${Number(contract.capitalReservePercent||0)}% reserve ${new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(Number(contract.requiredBatchCapitalUsd||contract.estimatedBotCapitalUsd||0))}</li><li>No serialized execution or capital reuse assumed</li><li>${new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(Number(contract.perTradeCapitalUsd||0))} reference budget per prediction</li></ul><p class="plan-notice">${escapeHTML(held?(reasons||'Awaiting a fresh prediction batch.'):contract.notice)}</p><button class="primary" data-daily-buy="${escapeHTML(contract.contractId)}" ${held?'disabled':''}>${held?'Issuance held':state.user?'Review contract':'Register & continue'} <span>↗</span></button></article>`;
-    }).join('');
-    $$('[data-daily-buy]').forEach(button=>button.addEventListener('click',()=>{
-      selectedContract=contracts.find(item=>item.contractId===button.dataset.dailyBuy)||null;
-      if(!selectedContract)return;
-      if(!state.user){resumePurchase=true;authMode('register');$('#auth-dialog').showModal();}
-      else openDailyContract(selectedContract);
-    }));
-    const sourceName=String(catalogue.sourceInstance||'o369').toUpperCase();
-    $('#checkout-note').textContent=catalogue.available?(catalogue.proofOfConcept?`Three ${sourceName} proof-of-concept research contracts are published for this UTC day. Their predictions are research-ranked, not trade-qualified; reference capital remains in the subscriber’s own account.`:`Three ${sourceName} contracts are fixed for this UTC day. Access fees buy the research list only; the displayed bot-capital estimate remains in the subscriber’s own exchange account.`):`Daily ${sourceName} issuance is waiting for a fresh prediction source and USD/INR reference.`;
-    return;
-  }
   const plans = state.plans || fallbackPlans;
-  $('#plan-grid').innerHTML = planOrder.map(id => {
+  const baseCards=planOrder.map(id => {
     const p = plans[id], amount = amountFor(id);
     return `<article class="plan ${id === 'investment'?'popular':''}" data-plan="${id}"><div class="plan-head"><i class="plan-icon">${icons[id]}</i><div><p class="eyebrow">PLAN ${p.number}</p><h3>${escapeHTML(p.name)}</h3></div></div><p class="description">${escapeHTML(p.description)}</p><div class="price" id="amount-display-${id}">${money(amount)}</div><p class="per-unit">Choose your starting amount · USD</p><label class="slider-label" for="slider-${id}">Payment scale<input id="slider-${id}" type="range" min="${p.min_amount/100}" max="${p.max_amount/100}" step="1" value="${amount/100}" data-slider="${id}"></label><div class="range-labels"><span>${money(p.min_amount)}</span><span>${money(p.max_amount)}</span></div><label class="amount-label" for="number-${id}">Exact amount (USD)<input id="number-${id}" type="number" min="${p.min_amount/100}" max="${p.max_amount/100}" step="1" value="${amount/100}" data-number="${id}"></label><ul>${p.features.map(f=>`<li>${escapeHTML(f)}</li>`).join('')}</ul><p class="plan-notice">${escapeHTML(p.notice)}</p><button class="primary" data-buy="${id}">${state.user?'Review selected amount':'Register & continue'} <span>↗</span></button></article>`;
   }).join('');
+  const contractCards=contracts.map((contract,index)=>{
+    const held=contract.status!=='available',price=Number(contract.contractPriceCents||contract.accessFeeCents||0),poc=contract.proofOfConcept===true,reasons=(contract.blockedReasons||[]).join('; ');
+    return `<article class="plan plan-three ${index===1?'popular':''}" data-contract="${escapeHTML(contract.contractId)}"><div class="plan-head"><i class="plan-icon">${contract.accessDays===1?'ϟ':contract.accessDays===3?'◇':'▤'}</i><div><p class="eyebrow">PLAN 3 · ${poc?'PROOF OF CONCEPT':'BOT CONTRACT'} · ${contract.accessDays} DAY</p><h3>${escapeHTML(contract.name)}</h3></div></div><p class="description">${Number(contract.predictionCount||contract.dailyBatchSize||0)} ${poc?'research-ranked, non-trade-qualified':'production-qualified'} predictions from a capacity of ${Number(contract.predictionCap||0)}.</p><div class="price">${price?money(price):'HELD'}</div><p class="per-unit">Contract purchase price · maximum $10,000</p><ul><li>Fixed batch of ${Number(contract.signalEntitlementCount||0)} prediction entitlements</li><li>Gross trade allocation ${new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(Number(contract.grossBatchCapitalUsd||0))}</li><li>Separate exchange capital with ${Number(contract.capitalReservePercent||0)}% reserve ${new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(Number(contract.requiredBatchCapitalUsd||0))}</li><li>Known cash before undefined bot costs ${money(Number(contract.knownActualizationCashCents||0))}</li><li>Bot status: ${escapeHTML(contract.botDeploymentStatus||'not-defined')} · execution disabled</li><li>No serialized capital reuse assumed</li></ul><p class="plan-notice">${escapeHTML(held?(reasons||'Awaiting a fresh prediction batch.'):contract.notice)}</p><button class="primary" data-daily-buy="${escapeHTML(contract.contractId)}" ${held?'disabled':''}>${held?'Issuance held':state.user?'Review Plan 3 contract':'Register & continue'} <span>↗</span></button></article>`;
+  }).join('');
+  const plan3Heading='<div class="plan-stage"><p class="eyebrow">PLAN 3 · TRADING BOT CONTRACTS</p><h3>Prediction batches with separately funded exchange capital</h3><p>These contracts price a fixed prediction batch. A deployed trading bot, exchange account and separately controlled trading capital are still required to actualize it.</p></div>';
+  $('#plan-grid').innerHTML=baseCards+(contracts.length?plan3Heading+contractCards:plan3Heading+'<div class="plan-stage pending">Awaiting the next authenticated O369 production issue.</div>');
   $$('[data-slider]').forEach(input => input.addEventListener('input',()=>{
     const id=input.dataset.slider, amount=Number(input.value)*100;
     saveSelection(id,amount); $(`#number-${id}`).value=input.value; $(`#amount-display-${id}`).textContent=money(amount);
@@ -100,13 +89,21 @@ function renderPlans() {
     if(!state.user){api('/api/analytics/event',{event:'registration.opened'}).catch(()=>{});resumePurchase=true;authMode('register');$('#auth-dialog').showModal();}
     else openPurchase(id);
   }));
+  $$('[data-daily-buy]').forEach(button=>button.addEventListener('click',()=>{
+    selectedContract=contracts.find(item=>item.contractId===button.dataset.dailyBuy)||null;
+    if(!selectedContract)return;
+    if(!state.user){resumePurchase=true;authMode('register');$('#auth-dialog').showModal();}
+    else openDailyContract(selectedContract);
+  }));
+  const sourceName=String(catalogue.sourceInstance||'o369').toUpperCase();
+  $('#checkout-note').textContent=contracts.length?(catalogue.available?`Plans 1 and 2 remain available. Plan 3 publishes three ${sourceName} batch contracts daily; the purchase price, separate exchange capital and bot readiness are disclosed independently.`:`Plan 3 ${sourceName} issuance is held pending a fresh qualified source, while Plans 1 and 2 remain visible.`):'Plans 1 and 2 are available. Plan 3 is awaiting its next authenticated production issue.';
 }
 function openDailyContract(contract){
   selectedPlan=null;selectedContract=contract;
   $('#purchase-title').textContent=contract.name;
-  $('#purchase-description').textContent=`${contract.predictionCount||contract.dailyBatchSize} predictions · capacity ${contract.predictionCap} · ${contract.signalEntitlementCount} list entitlements · required exchange capital ${new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(Number(contract.requiredBatchCapitalUsd||contract.estimatedBotCapitalUsd||0))}, with no assumed capital reuse.`;
-  $('#purchase-price').textContent=money(contract.accessFeeCents);
-  $('#purchase-status').textContent=state.daily_contract_checkout_enabled?'The exact daily contract ID and fee will be verified by the server before Razorpay opens.':'Contract checkout is prepared but remains disabled pending commercial, legal, and payment-provider approval.';
+  $('#purchase-description').textContent=`${contract.predictionCount||contract.dailyBatchSize} predictions · capacity ${contract.predictionCap} · contract price ${money(contract.contractPriceCents||contract.accessFeeCents)} · separate exchange capital ${new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(Number(contract.requiredBatchCapitalUsd||0))} · known cash before undefined bot costs ${money(contract.knownActualizationCashCents||0)}.`;
+  $('#purchase-price').textContent=money(contract.contractPriceCents||contract.accessFeeCents);
+  $('#purchase-status').textContent=state.daily_contract_checkout_enabled?'The exact Plan 3 contract ID and price will be verified by the server before Razorpay opens. Bot execution remains disabled.':'Plan 3 checkout remains disabled pending bot definition, commercial/legal review and payment-provider approval.';
   $('#purchase-notice').textContent=contract.notice;
   $('#confirm-purchase').textContent=state.daily_contract_checkout_enabled?'Continue to Razorpay →':'Checkout approval pending';
   $('#confirm-purchase').disabled=!state.daily_contract_checkout_enabled;
@@ -163,7 +160,7 @@ $('#confirm-purchase').onclick = async () => {
   try {
     if(selectedContract){
       await loadRazorpay();
-      const order=await api('/api/checkout',{action:'order',contract_id:selectedContract.contractId,amount:selectedContract.accessFeeCents});
+      const order=await api('/api/checkout',{action:'order',contract_id:selectedContract.contractId,amount:selectedContract.contractPriceCents||selectedContract.accessFeeCents});
       const checkout=new window.Razorpay({key:order.key,order_id:order.order_id,amount:order.amount,currency:order.currency,name:'Delta Lateral Indices',description:order.name,prefill:{name:state.user.name,email:state.user.email},theme:{color:'#287eff'},handler:async payment=>{try{const result=await api('/api/checkout',{action:'verify',...payment});$('#purchase-dialog').close();await refresh();tab('holdings');message(result.message);}catch(error){$('#purchase-status').textContent=error.message;}}});
       checkout.open();return;
     }

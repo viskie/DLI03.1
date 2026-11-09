@@ -278,7 +278,7 @@ def checkout():
                     return jsonify(error='Daily contract checkout is awaiting commercial and payment approval.'), 503
                 if contract.get('status') != 'available' or int(contract.get('purchaseUntilMs') or 0) <= int(time.time() * 1000):
                     return jsonify(error='This daily contract is not currently available.'), 409
-                amount = int(contract.get('accessFeeCents') or 0)
+                amount = int(contract.get('contractPriceCents') or contract.get('accessFeeCents') or 0)
                 if value.get('amount') != amount or amount < 100:
                     return jsonify(error='The contract price changed. Refresh before continuing.'), 409
                 plan = 'daily_contract'
@@ -524,7 +524,7 @@ if CLOUD:
     def concurrent_write(error):
         return jsonify(error='Another request updated this account. Please retry.'), 409
 
-init_admin(app, store, oauth, register_oauth_providers)
+init_admin(app, store, oauth, register_oauth_providers, public_daily_contracts)
 
 if __name__ == '__main__':
     app.run(host='127.0.0.1', port=8000, debug=False)

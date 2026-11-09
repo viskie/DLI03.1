@@ -84,8 +84,8 @@ class PortalTests(unittest.TestCase):
 
     def test_daily_contract_uses_exact_server_price_and_preserves_batch(self):
         self.register()
-        contract = {'contractId':'O961-DAILY','name':'Oracle 961 · 1-day bot list',
-                    'status':'available','accessFeeCents':2500,
+        contract = {'contractId':'O961-DAILY','name':'Oracle 961 Plan 3 · 1-day bot contract',
+                    'status':'available','accessFeeCents':2500,'contractPriceCents':2500,
                     'purchaseUntilMs':int(time.time()*1000)+60_000,
                     'accessUntilMs':int(time.time()*1000)+86_400_000,
                     'batchSha256':'abc'}

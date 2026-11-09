@@ -1,7 +1,8 @@
-"""Deterministic daily Oracle research-access contract catalogue.
+"""Deterministic daily Oracle Plan 3 contract catalogue.
 
-The access fee and the subscriber's estimated exchange capital are deliberately
-separate.  DLI never receives or controls the latter through this catalogue.
+The purchase price, subscriber-controlled exchange capital and bot readiness
+are deliberately explicit. DLI never receives or controls exchange capital
+through this catalogue, and an available research contract is not a live bot.
 """
 from __future__ import annotations
 
@@ -17,6 +18,7 @@ CONTRACT_DURATIONS = (1, 3, 9)
 CONTRACT_CAP_BY_DAYS = {1: 30, 3: 100, 9: 300}
 DEFAULT_CAPITAL_RESERVE_PERCENT = 10.0
 DISCOUNT_BY_DAYS = {1: 1.0, 3: 0.90, 9: 0.75}
+MAX_CONTRACT_PRICE_CENTS = 1_000_000
 
 
 def _canonical_digest(value: Any) -> str:
@@ -141,12 +143,20 @@ def build_daily_contracts(
         per_trade_usd = per_trade_inr / usd_inr_rate if fx_ready else 0.0
         gross_batch_capital_usd = gross_batch_capital / usd_inr_rate if fx_ready else 0.0
         capital_usd = capital / usd_inr_rate if fx_ready else 0.0
-        access_fee_cents = max(100, math.ceil(
+        research_access_fee_cents = max(100, math.ceil(
             entitlements
             * max(0.01, float(prediction_quantum_reference_usd))
             * DISCOUNT_BY_DAYS[days]
             * 100
         )) if contract_batch else 0
+        # Plan 3 contract value must cover at least the disclosed full-batch
+        # capital requirement. The exchange capital itself remains separate
+        # and subscriber-controlled; the admin UI therefore also discloses the
+        # combined cash requirement rather than implying that purchase funds a
+        # trading account.
+        contract_price_cents = math.ceil(capital_usd * 100) if fx_ready and contract_batch else 0
+        price_within_limit = 0 < contract_price_cents <= MAX_CONTRACT_PRICE_CENTS
+        contract_ready = contract_ready and price_within_limit
         identity = {
             "issueDate": day_id,
             "accessDays": days,
@@ -158,11 +168,16 @@ def build_daily_contracts(
         prediction_batches[contract_id] = contract_batch
         contracts.append({
             "contractId": contract_id,
-            "name": f"Oracle 961 POC · {days}-day research list" if poc_mode else f"Oracle 961 · {days}-day bot list",
+            "name": f"Oracle 961 Plan 3 POC · {days}-day research list" if poc_mode else f"Oracle 961 Plan 3 · {days}-day bot contract",
+            "planNumber": 3,
+            "planId": "bot_contracts",
             "accessDays": days,
             "status": "available" if contract_ready else "held",
             "currency": "USD",
-            "accessFeeCents": access_fee_cents,
+            "accessFeeCents": contract_price_cents,
+            "contractPriceCents": contract_price_cents,
+            "contractPriceLimitCents": MAX_CONTRACT_PRICE_CENTS,
+            "researchAccessFeeCents": research_access_fee_cents,
             "predictionCap": CONTRACT_CAP_BY_DAYS[days],
             "predictionCount": len(contract_batch),
             "dailyBatchSize": len(contract_batch),
@@ -175,6 +190,7 @@ def build_daily_contracts(
             "perTradeCapitalUsd": round(per_trade_usd, 2),
             "grossBatchCapitalUsd": math.ceil(gross_batch_capital_usd * 100) / 100 if fx_ready else 0.0,
             "requiredBatchCapitalUsd": math.ceil(capital_usd * 100) / 100 if fx_ready else 0.0,
+            "requiredExchangeCapitalCents": math.ceil(capital_usd * 100) if fx_ready else 0,
             "estimatedBotCapitalUsd": math.ceil(capital_usd * 100) / 100 if fx_ready else 0.0,
             "usdInrRate": usd_inr_rate or None,
             "usdInrObservedAtMs": fx_observed_at_ms or None,
@@ -192,21 +208,25 @@ def build_daily_contracts(
             "proofOfConcept": poc_mode,
             "tradeQualified": not poc_mode,
             "executionEligible": False,
+            "botDeploymentStatus": "not-defined",
+            "exchangeCapitalCustody": "subscriber-controlled",
+            "knownActualizationCashCents": contract_price_cents * 2,
             "batchSha256": batch_hash,
             "blockedReasons": [] if contract_ready else (
                 blocked if not source_ready else
-                ["No available predictions have a target inside this contract window"]
+                ["No available predictions have a target inside this contract window"] if not contract_batch else
+                [f"Required contract value exceeds the USD {MAX_CONTRACT_PRICE_CENTS / 100:,.0f} purchase limit"]
             ),
             "sourceWarnings": blocked if poc_mode else [],
             "notice": (
-                "Proof-of-concept access to a research-ranked prediction list. Predictions are not trade-qualified; no execution or return is promised. Subscriber exchange capital remains separate."
+                "Proof-of-concept Plan 3 contract for a research-ranked prediction batch. Predictions are not trade-qualified; no bot execution or return is promised. Subscriber exchange capital remains separate."
                 if poc_mode else
-                "Access to a research prediction list. Subscriber exchange capital remains separate and is never collected by this contract."
+                "Plan 3 contract for a fixed prediction batch. A trading bot is not yet deployed. Subscriber exchange capital remains separate and is never collected by this contract."
             ),
         })
     return {
         "schemaVersion": 2,
-        "catalogueVersion": "gross-batch-capital-v4",
+        "catalogueVersion": "plan-3-bot-contracts-v5",
         "issueDate": day_id,
         "generatedAtMs": now_ms,
         "sourceGeneratedAtMs": generated_at_ms or None,
@@ -229,7 +249,10 @@ def build_daily_contracts(
             "dailyIssueCount": 3,
             "durationsDays": list(CONTRACT_DURATIONS),
             "capitalFormula": "ceil(prediction count * per-trade INR budget * (1 + reserve percent)); no capital reuse or serialized execution is assumed",
-            "accessFeeFormula": "ceil(signal entitlements * hourly prediction-quantum USD reference * duration discount)",
+            "contractPriceFormula": "ceil(required full-batch exchange capital in USD cents); held when above USD 10,000",
+            "researchAccessFeeFormula": "ceil(signal entitlements * hourly prediction-quantum USD reference * duration discount); disclosed as a reference component",
+            "actualizationFormula": "contract purchase price + separately subscriber-controlled required exchange capital; bot infrastructure and execution costs remain undefined",
+            "maximumContractPriceUsd": MAX_CONTRACT_PRICE_CENTS / 100,
             "durationDiscounts": {str(key): value for key, value in DISCOUNT_BY_DAYS.items()},
             "pocMeaning": "Available means research-access inventory is published; it does not mean trade qualification or execution eligibility.",
             "contractCaps": {str(key): value for key, value in CONTRACT_CAP_BY_DAYS.items()},

@@ -63,7 +63,7 @@ dialog{width:500px;max-width:calc(100% - 32px);max-height:calc(100dvh - 32px);pa
 @media(max-width:650px){#contracts .section-heading{display:block}#contracts .section-heading .currency{position:static;display:block;margin-top:10px}.plan-head,.plan>.description{min-height:0}.activity table{min-width:580px}.activity td{font-size:13px}#main-grid.single-view .plan{padding:24px 20px}}
 
 /* A compact, centered payment scale; retain the exact amount input. */
-.plan .slider-label,.plan .range-labels{width:40%;margin-inline:auto}.plan .slider-label{display:block;text-align:center}.plan .slider-label input{width:100%}.plan .range-labels{gap:14px;white-space:nowrap;justify-content:space-between}.plan input[type=range]{cursor:pointer}
+.plan .slider-label,.plan .range-labels{width:40%;margin-inline:auto}.plan .slider-label{display:block;text-align:center}.plan .slider-label input{width:100%}.plan .range-labels{gap:14px;white-space:nowrap;justify-content:space-between}.plan input[type=range]{cursor:pointer}.plan-stage{grid-column:1/-1;margin-top:18px;padding:20px;border-block:1px solid var(--line);text-align:center}.plan-stage h3{font-size:22px}.plan-stage p:last-child{color:#9ab3ca;margin-top:6px;font-size:13px}.plan-stage.pending{color:#8da9c1}.plan-three{border-color:#275c65}.plan-three .plan-icon{background:#123a35;color:#58e6bc}
 
 /* Authenticated prediction ledger with a restrained parallax depth layer. */
 .outcome-stage{--outcome-parallax:0px;position:relative;isolation:isolate;overflow:hidden;margin:28px auto 0;max-width:1920px;padding:28px;background:linear-gradient(125deg,#071722 0%,#0b1e31 48%,#101831 100%);border-color:#255272;box-shadow:0 24px 80px #0007,0 0 0 1px #55c7ff0a inset}

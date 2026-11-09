@@ -53,7 +53,7 @@ class StatusArtifactTests(unittest.TestCase):
         self.assertEqual(len(first['dailyContracts']['contracts']), 3)
         self.assertFalse(first['dailyContracts']['available'])
 
-    def test_three_daily_contracts_have_separate_access_fee_and_bot_capital(self):
+    def test_plan_three_prices_full_batch_and_keeps_exchange_capital_separate(self):
         source = {
             'generatedAtMs': 3_599_000, 'scopeStatus': 'ready', 'scopeId': 'scope',
             'sourceInstance': 'o369', 'sourceInstanceKey': 'instance-2',
@@ -80,9 +80,13 @@ class StatusArtifactTests(unittest.TestCase):
         self.assertTrue(all(item['requiredBatchCapitalInr'] == 2321 for item in catalogue['contracts']))
         self.assertTrue(all(item['estimatedBotCapitalInr'] == item['requiredBatchCapitalInr'] for item in catalogue['contracts']))
         self.assertTrue(all(item['estimatedBotCapitalUsd'] > 0 for item in catalogue['contracts']))
-        self.assertTrue(all(item['accessFeeCents'] > 0 for item in catalogue['contracts']))
-        self.assertNotEqual(catalogue['contracts'][0]['accessFeeCents'],
-                            catalogue['contracts'][0]['estimatedBotCapitalInr'] * 100)
+        self.assertTrue(all(item['planNumber'] == 3 for item in catalogue['contracts']))
+        self.assertTrue(all(item['contractPriceCents'] == item['accessFeeCents'] for item in catalogue['contracts']))
+        self.assertTrue(all(item['contractPriceCents'] == item['requiredExchangeCapitalCents'] for item in catalogue['contracts']))
+        self.assertTrue(all(item['knownActualizationCashCents'] == 2 * item['contractPriceCents'] for item in catalogue['contracts']))
+        self.assertTrue(all(item['researchAccessFeeCents'] > 0 for item in catalogue['contracts']))
+        self.assertTrue(all(item['contractPriceCents'] <= 1_000_000 for item in catalogue['contracts']))
+        self.assertTrue(all(item['botDeploymentStatus'] == 'not-defined' for item in catalogue['contracts']))
 
     def test_poc_contracts_publish_ranked_rows_without_trade_qualification(self):
         source = {
@@ -120,7 +124,7 @@ class StatusArtifactTests(unittest.TestCase):
         }
         catalogue = build_daily_contracts(source, now_ms=3_600_000,
                                            prediction_quantum_reference_usd=1.0)
-        self.assertEqual(catalogue['catalogueVersion'], 'gross-batch-capital-v4')
+        self.assertEqual(catalogue['catalogueVersion'], 'plan-3-bot-contracts-v5')
         self.assertEqual([item['predictionCap'] for item in catalogue['contracts']],
                          [30, 100, 300])
         self.assertEqual([item['dailyBatchSize'] for item in catalogue['contracts']],
@@ -136,6 +140,23 @@ class StatusArtifactTests(unittest.TestCase):
         self.assertEqual(catalogue['predictionBatches'][catalogue['contracts'][0]['contractId']][-1]['rank'], 30)
         self.assertEqual(catalogue['predictionBatches'][catalogue['contracts'][1]['contractId']][-1]['rank'], 100)
         self.assertEqual(catalogue['predictionBatches'][catalogue['contracts'][2]['contractId']][-1]['rank'], 300)
+
+    def test_plan_three_holds_contract_above_ten_thousand_dollars(self):
+        source = {
+            'generatedAtMs': 3_599_000, 'scopeStatus': 'ready', 'scopeId': 'limit',
+            'issuanceMode': 'poc-research', 'tradeEligibleNowCount': 0,
+            'tradeQuantum': {'investmentInr': 1_000_000},
+            'usdInr': {'rate': 80.0, 'observedAtMs': 3_599_000, 'basis': 'test'},
+            'rows': [{'rank': 1, 'market': 'BTC/INR', 'targetAtMs': 10_000_000,
+                      'forecastHorizonSeconds': 900, 'signalId': 'limit-1'}],
+        }
+        catalogue = build_daily_contracts(source, now_ms=3_600_000,
+                                           prediction_quantum_reference_usd=1.0)
+        self.assertTrue(all(item['contractPriceCents'] > 1_000_000
+                            for item in catalogue['contracts']))
+        self.assertTrue(all(item['status'] == 'held' for item in catalogue['contracts']))
+        self.assertTrue(all('10,000' in item['blockedReasons'][0]
+                            for item in catalogue['contracts']))
 
     def test_authenticated_round_trip_and_wrong_key(self):
         payload = build_status(self.instance, now_ms=3_600_000)
