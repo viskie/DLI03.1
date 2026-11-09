@@ -73,6 +73,8 @@ class StatusArtifactTests(unittest.TestCase):
         self.assertTrue(all(item['sourceInstance'] == 'o369' for item in catalogue['contracts']))
         self.assertEqual([item['accessDays'] for item in catalogue['contracts']], [1, 3, 9])
         self.assertEqual([item['dailyBatchSize'] for item in catalogue['contracts']], [2, 2, 2])
+        self.assertEqual([item['predictionCap'] for item in catalogue['contracts']], [30, 100, 300])
+        self.assertEqual([item['signalEntitlementCount'] for item in catalogue['contracts']], [2, 2, 2])
         self.assertTrue(all(item['estimatedBotCapitalInr'] >= 2 * 1055 for item in catalogue['contracts']))
         self.assertTrue(all(item['estimatedBotCapitalUsd'] > 0 for item in catalogue['contracts']))
         self.assertTrue(all(item['accessFeeCents'] > 0 for item in catalogue['contracts']))
@@ -100,21 +102,12 @@ class StatusArtifactTests(unittest.TestCase):
         self.assertFalse(catalogue['contracts'][0]['executionEligible'])
         self.assertIn('low-confidence', catalogue['contracts'][0]['sourceWarnings'])
 
-    def test_contract_windows_include_every_available_row_without_thirty_row_cap(self):
-        day = 86_400_000
+    def test_contract_windows_apply_tiered_prediction_caps(self):
         rows = [
             {'rank': rank, 'market': f'M{rank}/INR', 'targetAtMs': 10_000_000 + rank,
              'forecastHorizonSeconds': 900, 'signalId': f'one-{rank}'}
-            for rank in range(1, 36)
+            for rank in range(1, 321)
         ]
-        rows.extend([
-            {'rank': 36, 'market': 'TWO/INR', 'targetAtMs': 2 * day,
-             'forecastHorizonSeconds': day, 'signalId': 'two'},
-            {'rank': 37, 'market': 'EIGHT/INR', 'targetAtMs': 8 * day,
-             'forecastHorizonSeconds': day, 'signalId': 'eight'},
-            {'rank': 38, 'market': 'TEN/INR', 'targetAtMs': 10 * day,
-             'forecastHorizonSeconds': day, 'signalId': 'outside'},
-        ])
         source = {
             'generatedAtMs': 3_599_000, 'scopeStatus': 'ready', 'scopeId': 'windows',
             'issuanceMode': 'poc-research', 'tradeEligibleNowCount': 0,
@@ -124,13 +117,18 @@ class StatusArtifactTests(unittest.TestCase):
         }
         catalogue = build_daily_contracts(source, now_ms=3_600_000,
                                            prediction_quantum_reference_usd=1.0)
-        self.assertEqual(catalogue['catalogueVersion'], 'all-window-targets-v2')
+        self.assertEqual(catalogue['catalogueVersion'], 'tiered-window-caps-v3')
+        self.assertEqual([item['predictionCap'] for item in catalogue['contracts']],
+                         [30, 100, 300])
         self.assertEqual([item['dailyBatchSize'] for item in catalogue['contracts']],
-                         [35, 36, 37])
+                         [30, 100, 300])
+        self.assertEqual([item['signalEntitlementCount'] for item in catalogue['contracts']],
+                         [30, 100, 300])
         self.assertEqual([len(catalogue['predictionBatches'][item['contractId']])
-                          for item in catalogue['contracts']], [35, 36, 37])
-        self.assertNotIn('outside', {row['signalId'] for batch in
-                         catalogue['predictionBatches'].values() for row in batch})
+                          for item in catalogue['contracts']], [30, 100, 300])
+        self.assertEqual(catalogue['predictionBatches'][catalogue['contracts'][0]['contractId']][-1]['rank'], 30)
+        self.assertEqual(catalogue['predictionBatches'][catalogue['contracts'][1]['contractId']][-1]['rank'], 100)
+        self.assertEqual(catalogue['predictionBatches'][catalogue['contracts'][2]['contractId']][-1]['rank'], 300)
 
     def test_authenticated_round_trip_and_wrong_key(self):
         payload = build_status(self.instance, now_ms=3_600_000)

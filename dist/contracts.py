@@ -13,6 +13,7 @@ from typing import Any
 
 
 CONTRACT_DURATIONS = (1, 3, 9)
+CONTRACT_CAP_BY_DAYS = {1: 30, 3: 100, 9: 300}
 DEFAULT_CAPITAL_RESERVE_PERCENT = 10.0
 DISCOUNT_BY_DAYS = {1: 1.0, 3: 0.90, 9: 0.75}
 
@@ -29,16 +30,19 @@ def _utc_day(now_ms: int) -> tuple[str, int, int]:
     return start.date().isoformat(), start_ms, start_ms + 86_400_000
 
 
-def _peak_concurrency(rows: list[dict[str, Any]], days: int) -> int:
-    """Repeat today's batch daily and measure the peak overlapping positions."""
+def _peak_concurrency(rows: list[dict[str, Any]]) -> int:
+    """Measure overlapping positions once for the immutable contract batch."""
     events: list[tuple[int, int]] = []
-    for day in range(days):
-        day_offset = day * 86_400_000
-        for row in rows:
-            horizon_ms = max(1, int(row.get("forecastHorizonSeconds") or 0)) * 1000
-            events.append((day_offset, 1))
-            # Close events sort before opens at the same instant.
-            events.append((day_offset + horizon_ms, -1))
+    for row in rows:
+        opened_at_ms = int(row.get("originAtMs") or 0)
+        closed_at_ms = int(row.get("targetAtMs") or 0)
+        if closed_at_ms <= opened_at_ms:
+            closed_at_ms = opened_at_ms + max(
+                1, int(row.get("forecastHorizonSeconds") or 0)
+            ) * 1000
+        events.append((opened_at_ms, 1))
+        # Close events sort before opens at the same instant.
+        events.append((closed_at_ms, -1))
     active = peak = 0
     for _, change in sorted(events, key=lambda item: (item[0], item[1])):
         active += change
@@ -65,6 +69,7 @@ def build_daily_contracts(
     rows.sort(key=lambda row: (int(row.get("rank") or 10**9), str(row.get("market") or "")))
     if daily_signal_cap is not None and int(daily_signal_cap) > 0:
         rows = rows[:int(daily_signal_cap)]
+    rows = rows[:max(CONTRACT_CAP_BY_DAYS.values())]
     generated_at_ms = int(source.get("generatedAtMs") or 0)
     source_age_seconds = max(0.0, (now_ms - generated_at_ms) / 1000) if generated_at_ms else None
     fx = source.get("usdInr") if isinstance(source.get("usdInr"), dict) else {}
@@ -105,10 +110,11 @@ def build_daily_contracts(
     prediction_batches: dict[str, list[dict[str, Any]]] = {}
     for days in CONTRACT_DURATIONS:
         access_until_ms = issued_at_ms + days * 86_400_000
-        contract_rows = [
+        eligible_rows = [
             row for row in rows
             if issued_at_ms <= int(row.get("targetAtMs") or 0) <= access_until_ms
         ]
+        contract_rows = eligible_rows[:CONTRACT_CAP_BY_DAYS[days]]
         contract_batch = [
             {
                 key: row.get(key)
@@ -123,8 +129,8 @@ def build_daily_contracts(
         ]
         batch_hash = _canonical_digest(contract_batch)
         contract_ready = source_ready and bool(contract_batch)
-        entitlements = len(contract_batch) * days
-        peak = _peak_concurrency(contract_rows, days) if contract_rows else 0
+        entitlements = len(contract_batch)
+        peak = _peak_concurrency(contract_rows) if contract_rows else 0
         capital = math.ceil(peak * per_trade_inr * (1 + capital_reserve_percent / 100))
         per_trade_usd = per_trade_inr / usd_inr_rate if fx_ready else 0.0
         capital_usd = capital / usd_inr_rate if fx_ready else 0.0
@@ -150,6 +156,8 @@ def build_daily_contracts(
             "status": "available" if contract_ready else "held",
             "currency": "USD",
             "accessFeeCents": access_fee_cents,
+            "predictionCap": CONTRACT_CAP_BY_DAYS[days],
+            "predictionCount": len(contract_batch),
             "dailyBatchSize": len(contract_batch),
             "signalEntitlementCount": entitlements,
             "peakConcurrentPositions": peak,
@@ -187,7 +195,7 @@ def build_daily_contracts(
         })
     return {
         "schemaVersion": 2,
-        "catalogueVersion": "all-window-targets-v2",
+        "catalogueVersion": "tiered-window-caps-v3",
         "issueDate": day_id,
         "generatedAtMs": now_ms,
         "sourceGeneratedAtMs": generated_at_ms or None,
@@ -213,6 +221,7 @@ def build_daily_contracts(
             "accessFeeFormula": "ceil(signal entitlements * hourly prediction-quantum USD reference * duration discount)",
             "durationDiscounts": {str(key): value for key, value in DISCOUNT_BY_DAYS.items()},
             "pocMeaning": "Available means research-access inventory is published; it does not mean trade qualification or execution eligibility.",
-            "batchSelection": "all ranked predictions whose targetAtMs falls between the UTC issue boundary and the contract accessUntilMs; no fixed row cap",
+            "contractCaps": {str(key): value for key, value in CONTRACT_CAP_BY_DAYS.items()},
+            "batchSelection": "ranked predictions eligible for the contract window, capped at 30, 100 and 300 for 1, 3 and 9 days",
         },
     }
