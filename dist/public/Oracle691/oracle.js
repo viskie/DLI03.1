@@ -72,7 +72,8 @@ function renderPlans() {
       if(!state.user){resumePurchase=true;authMode('register');$('#auth-dialog').showModal();}
       else openDailyContract(selectedContract);
     }));
-    $('#checkout-note').textContent=catalogue.available?'Three contracts are fixed for this UTC day. Access fees buy the research list only; the displayed bot-capital estimate remains in the subscriber’s own exchange account.':'Daily issuance is safely held until production supplies a fresh list whose predictions pass every trading-evidence gate.';
+    const sourceName=String(catalogue.sourceInstance||'o369').toUpperCase();
+    $('#checkout-note').textContent=catalogue.available?`Three ${sourceName} contracts are fixed for this UTC day. Access fees buy the research list only; the displayed bot-capital estimate remains in the subscriber’s own exchange account.`:`Daily ${sourceName} issuance is safely held until production supplies a fresh list whose predictions pass every trading-evidence gate.`;
     return;
   }
   const plans = state.plans || fallbackPlans;

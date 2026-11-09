@@ -56,6 +56,8 @@ def build_daily_contracts(
     capital_reserve_percent: float = DEFAULT_CAPITAL_RESERVE_PERCENT,
 ) -> dict[str, Any]:
     source = source if isinstance(source, dict) else {}
+    source_instance = str(source.get("sourceInstance") or "o369")
+    source_instance_key = str(source.get("sourceInstanceKey") or "instance-2")
     day_id, issued_at_ms, purchase_until_ms = _utc_day(now_ms)
     source_rows = source.get("rows") if isinstance(source.get("rows"), list) else []
     rows = [row for row in source_rows if isinstance(row, dict)]
@@ -114,6 +116,7 @@ def build_daily_contracts(
             "accessDays": days,
             "scopeId": source.get("scopeId"),
             "batchSha256": batch_hash,
+            "sourceInstance": source_instance,
         }
         contracts.append({
             "contractId": "O961-" + _canonical_digest(identity)[:20].upper(),
@@ -139,6 +142,8 @@ def build_daily_contracts(
             "scopeId": source.get("scopeId"),
             "forecastConfigId": source.get("forecastConfigId"),
             "modelSha256": source.get("modelSha256"),
+            "sourceInstance": source_instance,
+            "sourceInstanceKey": source_instance_key,
             "batchSha256": batch_hash,
             "blockedReasons": [] if source_ready else blocked,
             "notice": "Access to a research prediction list. Subscriber exchange capital remains separate and is never collected by this contract.",
@@ -152,6 +157,8 @@ def build_daily_contracts(
         "usdInrRate": usd_inr_rate or None,
         "usdInrObservedAtMs": fx_observed_at_ms or None,
         "sourceScopeId": source.get("scopeId"),
+        "sourceInstance": source_instance,
+        "sourceInstanceKey": source_instance_key,
         "sourceBatchSha256": batch_hash,
         "available": source_ready,
         "contracts": contracts,

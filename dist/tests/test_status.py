@@ -56,6 +56,7 @@ class StatusArtifactTests(unittest.TestCase):
     def test_three_daily_contracts_have_separate_access_fee_and_bot_capital(self):
         source = {
             'generatedAtMs': 3_599_000, 'scopeStatus': 'ready', 'scopeId': 'scope',
+            'sourceInstance': 'o369', 'sourceInstanceKey': 'instance-2',
             'tradeEligibleNowCount': 2, 'blockedReasons': [],
             'tradeQuantum': {'investmentInr': 1055},
             'usdInr': {'rate': 84.4, 'observedAtMs': 3_599_000, 'basis': 'test'},
@@ -67,6 +68,9 @@ class StatusArtifactTests(unittest.TestCase):
         catalogue = build_daily_contracts(source, now_ms=3_600_000,
                                            prediction_quantum_reference_usd=1.0)
         self.assertTrue(catalogue['available'])
+        self.assertEqual(catalogue['sourceInstance'], 'o369')
+        self.assertEqual(catalogue['sourceInstanceKey'], 'instance-2')
+        self.assertTrue(all(item['sourceInstance'] == 'o369' for item in catalogue['contracts']))
         self.assertEqual([item['accessDays'] for item in catalogue['contracts']], [1, 3, 9])
         self.assertEqual([item['dailyBatchSize'] for item in catalogue['contracts']], [2, 2, 2])
         self.assertTrue(all(item['estimatedBotCapitalInr'] >= 2 * 1055 for item in catalogue['contracts']))
