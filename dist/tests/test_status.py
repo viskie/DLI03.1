@@ -76,6 +76,9 @@ class StatusArtifactTests(unittest.TestCase):
         self.assertEqual([item['predictionCap'] for item in catalogue['contracts']], [30, 100, 300])
         self.assertEqual([item['signalEntitlementCount'] for item in catalogue['contracts']], [2, 2, 2])
         self.assertTrue(all(item['estimatedBotCapitalInr'] >= 2 * 1055 for item in catalogue['contracts']))
+        self.assertTrue(all(item['grossBatchCapitalInr'] == 2 * 1055 for item in catalogue['contracts']))
+        self.assertTrue(all(item['requiredBatchCapitalInr'] == 2321 for item in catalogue['contracts']))
+        self.assertTrue(all(item['estimatedBotCapitalInr'] == item['requiredBatchCapitalInr'] for item in catalogue['contracts']))
         self.assertTrue(all(item['estimatedBotCapitalUsd'] > 0 for item in catalogue['contracts']))
         self.assertTrue(all(item['accessFeeCents'] > 0 for item in catalogue['contracts']))
         self.assertNotEqual(catalogue['contracts'][0]['accessFeeCents'],
@@ -117,13 +120,17 @@ class StatusArtifactTests(unittest.TestCase):
         }
         catalogue = build_daily_contracts(source, now_ms=3_600_000,
                                            prediction_quantum_reference_usd=1.0)
-        self.assertEqual(catalogue['catalogueVersion'], 'tiered-window-caps-v3')
+        self.assertEqual(catalogue['catalogueVersion'], 'gross-batch-capital-v4')
         self.assertEqual([item['predictionCap'] for item in catalogue['contracts']],
                          [30, 100, 300])
         self.assertEqual([item['dailyBatchSize'] for item in catalogue['contracts']],
                          [30, 100, 300])
         self.assertEqual([item['signalEntitlementCount'] for item in catalogue['contracts']],
                          [30, 100, 300])
+        self.assertEqual([item['grossBatchCapitalInr'] for item in catalogue['contracts']],
+                         [31_650, 105_500, 316_500])
+        self.assertEqual([item['requiredBatchCapitalInr'] for item in catalogue['contracts']],
+                         [34_815, 116_050, 348_150])
         self.assertEqual([len(catalogue['predictionBatches'][item['contractId']])
                           for item in catalogue['contracts']], [30, 100, 300])
         self.assertEqual(catalogue['predictionBatches'][catalogue['contracts'][0]['contractId']][-1]['rank'], 30)

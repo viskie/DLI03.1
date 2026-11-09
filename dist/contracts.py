@@ -6,6 +6,7 @@ separate.  DLI never receives or controls the latter through this catalogue.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from decimal import Decimal, ROUND_CEILING
 import hashlib
 import json
 import math
@@ -131,8 +132,14 @@ def build_daily_contracts(
         contract_ready = source_ready and bool(contract_batch)
         entitlements = len(contract_batch)
         peak = _peak_concurrency(contract_rows) if contract_rows else 0
-        capital = math.ceil(peak * per_trade_inr * (1 + capital_reserve_percent / 100))
+        gross_batch_value = Decimal(str(per_trade_inr)) * len(contract_batch)
+        gross_batch_capital = int(gross_batch_value.to_integral_value(rounding=ROUND_CEILING))
+        capital = int((
+            gross_batch_value
+            * (Decimal("1") + Decimal(str(capital_reserve_percent)) / Decimal("100"))
+        ).to_integral_value(rounding=ROUND_CEILING))
         per_trade_usd = per_trade_inr / usd_inr_rate if fx_ready else 0.0
+        gross_batch_capital_usd = gross_batch_capital / usd_inr_rate if fx_ready else 0.0
         capital_usd = capital / usd_inr_rate if fx_ready else 0.0
         access_fee_cents = max(100, math.ceil(
             entitlements
@@ -162,8 +169,12 @@ def build_daily_contracts(
             "signalEntitlementCount": entitlements,
             "peakConcurrentPositions": peak,
             "perTradeCapitalInr": per_trade_inr,
+            "grossBatchCapitalInr": gross_batch_capital,
+            "requiredBatchCapitalInr": capital,
             "estimatedBotCapitalInr": capital,
             "perTradeCapitalUsd": round(per_trade_usd, 2),
+            "grossBatchCapitalUsd": math.ceil(gross_batch_capital_usd * 100) / 100 if fx_ready else 0.0,
+            "requiredBatchCapitalUsd": math.ceil(capital_usd * 100) / 100 if fx_ready else 0.0,
             "estimatedBotCapitalUsd": math.ceil(capital_usd * 100) / 100 if fx_ready else 0.0,
             "usdInrRate": usd_inr_rate or None,
             "usdInrObservedAtMs": fx_observed_at_ms or None,
@@ -195,7 +206,7 @@ def build_daily_contracts(
         })
     return {
         "schemaVersion": 2,
-        "catalogueVersion": "tiered-window-caps-v3",
+        "catalogueVersion": "gross-batch-capital-v4",
         "issueDate": day_id,
         "generatedAtMs": now_ms,
         "sourceGeneratedAtMs": generated_at_ms or None,
@@ -217,7 +228,7 @@ def build_daily_contracts(
         "methodology": {
             "dailyIssueCount": 3,
             "durationsDays": list(CONTRACT_DURATIONS),
-            "capitalFormula": "ceil(peak overlapping positions * per-trade INR budget * (1 + reserve percent))",
+            "capitalFormula": "ceil(prediction count * per-trade INR budget * (1 + reserve percent)); no capital reuse or serialized execution is assumed",
             "accessFeeFormula": "ceil(signal entitlements * hourly prediction-quantum USD reference * duration discount)",
             "durationDiscounts": {str(key): value for key, value in DISCOUNT_BY_DAYS.items()},
             "pocMeaning": "Available means research-access inventory is published; it does not mean trade qualification or execution eligibility.",
