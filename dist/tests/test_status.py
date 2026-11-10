@@ -7,7 +7,9 @@ from pathlib import Path
 from cryptography.fernet import Fernet
 
 from status_artifact import StatusArtifactError, decrypt_status, encrypt_status
-from status_generator import build_status, _matured_contract_simulations
+from status_generator import (
+    build_status, _all_actualized_simulation, _matured_contract_simulations,
+)
 from contracts import build_daily_contracts
 
 
@@ -245,6 +247,26 @@ class StatusArtifactTests(unittest.TestCase):
         self.assertAlmostEqual(report['netProfitLossUsd'], 8.5942)
         self.assertEqual(report['correctPredictions'], 1)
         self.assertEqual(report['wrongPredictions'], 0)
+
+    def test_all_actualized_simulation_values_the_complete_aggregate(self):
+        result = _all_actualized_simulation(
+            {'totalActualized': 4, 'performance': {
+                'validCount': 4, 'correct': 3, 'wrong': 1,
+                'directionalReturnSum': 0.2,
+                'exitNotionalFactorSum': 4.2,
+            }},
+            {'usdInr': {'rate': 80}, 'tradeQuantum': {
+                'investmentInr': 800, 'assetNotionalInr': 784,
+                'entryFeeBps': 10, 'exitFeeBps': 10,
+                'costBufferInr': 8,
+            }},
+        )
+        self.assertTrue(result['available'])
+        self.assertEqual(result['correctPredictions'], 3)
+        self.assertEqual(result['wrongPredictions'], 1)
+        self.assertAlmostEqual(result['grossProfitLossUsd'], 1.96)
+        self.assertAlmostEqual(result['executionCostsUsd'], 0.48036)
+        self.assertAlmostEqual(result['netProfitLossUsd'], 1.47964)
 
     def test_authenticated_round_trip_and_wrong_key(self):
         payload = build_status(self.instance, now_ms=3_600_000)

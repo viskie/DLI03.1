@@ -89,6 +89,14 @@ administrator selects reports under **Plan 3 actualization**. Correct/wrong
 counts come from Prediction-versus-Reality, while profitable/loss-making counts
 come from calculated net P&L. Reports refresh after each hourly publication.
 
+The same panel separately values the complete actualized ledger. This is not a
+contract result: it assigns one equal disclosed stake to every valid resolved
+forecast and reports total hypothetical capital, gross P&L, stored execution
+costs and net P&L. The aggregate is produced at the prediction source so all
+rows are counted even though only the latest 1,000 rows are published for
+inspection. It must be compared with timestamp-matched random and naive
+baselines before the selector can be credited with economic lift.
+
 The contract engine is `contracts.py`, the storefront is
 `public/Oracle691/oracle.js`, and regression coverage is in
 `tests/test_status.py`. After deploying the committed `dist` tree to Vercel,

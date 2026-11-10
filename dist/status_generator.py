@@ -254,6 +254,55 @@ def _matured_contract_simulations(
     }
 
 
+def _all_actualized_simulation(
+    remote_outcomes: dict[str, Any] | None,
+    contract_source: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Value the complete actualized ledger at one disclosed stake per row."""
+    performance = (remote_outcomes or {}).get("performance")
+    quantum = (contract_source or {}).get("tradeQuantum")
+    fx = (contract_source or {}).get("usdInr")
+    if not isinstance(performance, dict) or not isinstance(quantum, dict) or not isinstance(fx, dict):
+        return {"available": False, "reason": "full-ledger aggregate is unavailable from the production source"}
+    count = int(performance.get("validCount") or 0)
+    rate = float(fx.get("rate") or 0)
+    if count <= 0 or rate <= 0:
+        return {"available": False, "reason": "no valid actualized rows or USD/INR conversion"}
+    budget = float(quantum.get("investmentInr") or 1055) / rate
+    notional = float(quantum.get("assetNotionalInr") or quantum.get("investmentInr") or 1055) / rate
+    entry_rate = float(quantum.get("entryFeeBps") or 0) / 10_000
+    exit_rate = float(quantum.get("exitFeeBps") or 0) / 10_000
+    buffer = float(quantum.get("costBufferInr") or 0) / rate
+    gross = notional * float(performance.get("directionalReturnSum") or 0)
+    entry_fees = count * notional * entry_rate
+    exit_fees = notional * float(performance.get("exitNotionalFactorSum") or 0) * exit_rate
+    buffers = count * buffer
+    net = gross - entry_fees - exit_fees - buffers
+    capital = count * budget
+    return {
+        "available": True,
+        "actualizedCount": int((remote_outcomes or {}).get("totalActualized") or count),
+        "valuedCount": count,
+        "correctPredictions": int(performance.get("correct") or 0),
+        "wrongPredictions": int(performance.get("wrong") or 0),
+        "directionAccuracyPercent": round(
+            100 * int(performance.get("correct") or 0) /
+            max(1, int(performance.get("correct") or 0) + int(performance.get("wrong") or 0)), 4
+        ),
+        "perTradeCapitalUsd": round(budget, 6),
+        "totalHypotheticalCapitalUsd": round(capital, 6),
+        "grossProfitLossUsd": round(gross, 6),
+        "entryFeesUsd": round(entry_fees, 6),
+        "exitFeesUsd": round(exit_fees, 6),
+        "costBufferUsd": round(buffers, 6),
+        "executionCostsUsd": round(entry_fees + exit_fees + buffers, 6),
+        "netProfitLossUsd": round(net, 6),
+        "netReturnPercent": round(100 * net / capital, 6) if capital else None,
+        "costBasis": "configured" if entry_rate or exit_rate or buffer else "zero-configured-costs",
+        "assumption": "every actualized forecast receives one independent fixed stake; capital is not reused",
+    }
+
+
 def _outcomes(database: Path) -> tuple[list[dict[str, Any]], list[dict[str, Any]], int, int]:
     if not database.is_file():
         raise FileNotFoundError(f"prediction outcome database is unavailable: {database}")
@@ -518,6 +567,9 @@ def generate(*, instance: Path, output: Path, archive: Path, key_file: Path,
     )
     payload["maturedContractSimulations"] = _matured_contract_simulations(
         archive, key, int(time.time() * 1000) if now_ms is None else int(now_ms)
+    )
+    payload["maturedContractSimulations"]["allActualized"] = _all_actualized_simulation(
+        remote_outcomes, contract_source
     )
     if output.is_file():
         try:
