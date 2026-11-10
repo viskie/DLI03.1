@@ -96,6 +96,10 @@ def build_daily_contracts(
 
     quantum = source.get("tradeQuantum") if isinstance(source.get("tradeQuantum"), dict) else {}
     per_trade_inr = float(quantum.get("investmentInr") or 1055.0)
+    asset_notional_inr = float(quantum.get("assetNotionalInr") or per_trade_inr)
+    entry_fee_bps = float(quantum.get("entryFeeBps") or 0)
+    exit_fee_bps = float(quantum.get("exitFeeBps") or 0)
+    cost_buffer_inr = float(quantum.get("costBufferInr") or 0)
     all_batch_rows = [
         {
             key: row.get(key)
@@ -141,6 +145,8 @@ def build_daily_contracts(
             * (Decimal("1") + Decimal(str(capital_reserve_percent)) / Decimal("100"))
         ).to_integral_value(rounding=ROUND_CEILING))
         per_trade_usd = per_trade_inr / usd_inr_rate if fx_ready else 0.0
+        asset_notional_usd = asset_notional_inr / usd_inr_rate if fx_ready else 0.0
+        cost_buffer_usd = cost_buffer_inr / usd_inr_rate if fx_ready else 0.0
         gross_batch_capital_usd = gross_batch_capital / usd_inr_rate if fx_ready else 0.0
         capital_usd = capital / usd_inr_rate if fx_ready else 0.0
         research_access_fee_cents = max(100, math.ceil(
@@ -188,6 +194,11 @@ def build_daily_contracts(
             "requiredBatchCapitalInr": capital,
             "estimatedBotCapitalInr": capital,
             "perTradeCapitalUsd": round(per_trade_usd, 2),
+            "assetNotionalUsd": round(asset_notional_usd, 6),
+            "entryFeeBps": entry_fee_bps,
+            "exitFeeBps": exit_fee_bps,
+            "costBufferUsd": round(cost_buffer_usd, 6),
+            "costsConfigured": bool(entry_fee_bps or exit_fee_bps or cost_buffer_inr),
             "grossBatchCapitalUsd": math.ceil(gross_batch_capital_usd * 100) / 100 if fx_ready else 0.0,
             "requiredBatchCapitalUsd": math.ceil(capital_usd * 100) / 100 if fx_ready else 0.0,
             "requiredExchangeCapitalCents": math.ceil(capital_usd * 100) if fx_ready else 0,

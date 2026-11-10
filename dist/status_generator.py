@@ -82,7 +82,7 @@ def _outcome_key(row: dict[str, Any]) -> tuple[str, int, int]:
 def _matured_contract_simulations(
     archive: Path, key: bytes, now_ms: int
 ) -> dict[str, Any]:
-    """Reconstruct expired Plan 3 batches against authenticated outcomes.
+    """Reconstruct the latest verifiable Plan 3 batches against outcomes.
 
     The newest catalogue for each UTC issue day and duration wins, which avoids
     listing superseded catalogue-schema revisions as separate contracts. No
@@ -122,11 +122,16 @@ def _matured_contract_simulations(
         target_at_ms = max(int(row.get("targetAtMs") or 0) for row in batch)
         access_until_ms = int(contract.get("accessUntilMs") or 0)
         matured_at_ms = max(target_at_ms, access_until_ms)
-        if matured_at_ms <= 0 or matured_at_ms > now_ms:
+        if target_at_ms <= 0:
             continue
         per_trade_usd = float(contract.get("perTradeCapitalUsd") or 0)
-        realized = wins = losses = flat = 0
+        asset_notional_usd = float(contract.get("assetNotionalUsd") or per_trade_usd)
+        entry_fee_rate = float(contract.get("entryFeeBps") or 0) / 10_000
+        exit_fee_rate = float(contract.get("exitFeeBps") or 0) / 10_000
+        cost_buffer_usd = float(contract.get("costBufferUsd") or 0)
+        realized = correct = wrong = flat = profitable = loss_making = 0
         gross_profit_loss = 0.0
+        net_profit_loss = entry_fees = exit_fees = cost_buffers = 0.0
         resolved_rows = []
         for prediction in batch:
             outcome = outcomes.get(_outcome_key(prediction))
@@ -141,12 +146,24 @@ def _matured_contract_simulations(
             sign = -1.0 if direction in {"down", "short", "sell", "-1"} else 1.0
             if direction not in {"down", "short", "sell", "-1", "up", "long", "buy", "1"}:
                 sign = 1.0 if predicted >= entry else -1.0
-            profit_loss = per_trade_usd * ((actual - entry) / entry) * sign
-            gross_profit_loss += profit_loss
+            gross = asset_notional_usd * ((actual - entry) / entry) * sign
+            entry_fee = asset_notional_usd * entry_fee_rate
+            exit_fee = max(0.0, asset_notional_usd + gross) * exit_fee_rate
+            net = gross - entry_fee - exit_fee - cost_buffer_usd
+            direction_correct = outcome.get("directionCorrect")
+            if direction_correct is None:
+                direction_correct = gross > 0
+            gross_profit_loss += gross
+            net_profit_loss += net
+            entry_fees += entry_fee
+            exit_fees += exit_fee
+            cost_buffers += cost_buffer_usd
             realized += 1
-            wins += profit_loss > 0
-            losses += profit_loss < 0
-            flat += profit_loss == 0
+            correct += bool(direction_correct)
+            wrong += not bool(direction_correct)
+            profitable += net > 0
+            loss_making += net < 0
+            flat += net == 0
             resolved_rows.append({
                 "market": prediction.get("market"),
                 "originAtMs": prediction.get("originAtMs"),
@@ -155,9 +172,14 @@ def _matured_contract_simulations(
                 "entryPrice": entry,
                 "actualPrice": actual,
                 "capitalUsd": round(per_trade_usd, 2),
-                "grossProfitLossUsd": round(profit_loss, 6),
+                "directionCorrect": bool(direction_correct),
+                "grossProfitLossUsd": round(gross, 6),
+                "executionCostsUsd": round(entry_fee + exit_fee + cost_buffer_usd, 6),
+                "netProfitLossUsd": round(net, 6),
                 "resolutionSource": outcome.get("resolutionSource"),
             })
+        if not realized:
+            continue
         batch_count = len(batch)
         unresolved = batch_count - realized
         realized_capital = per_trade_usd * realized
@@ -181,35 +203,51 @@ def _matured_contract_simulations(
             "batchSha256": contract.get("batchSha256"),
             "modelSha256": contract.get("modelSha256"),
             "simulationStatus": "complete" if unresolved == 0 else "partial",
+            "verificationStatus": "fully-verified" if unresolved == 0 else "partially-verified",
             "batchCount": batch_count,
             "realizedCount": realized,
             "unresolvedCount": unresolved,
             "outcomeCoveragePercent": round(100 * realized / batch_count, 4),
-            "winningTrades": wins,
-            "losingTrades": losses,
+            "correctPredictions": correct,
+            "wrongPredictions": wrong,
+            "winningTrades": profitable,
+            "losingTrades": loss_making,
             "flatTrades": flat,
-            "directionAccuracyPercent": round(100 * wins / realized, 4) if realized else None,
+            "directionAccuracyPercent": round(100 * correct / realized, 4) if realized else None,
             "perTradeCapitalUsd": round(per_trade_usd, 2),
             "fullBatchCapitalUsd": round(per_trade_usd * batch_count, 2),
             "realizedCapitalUsd": round(realized_capital, 2),
             "grossProfitLossUsd": round(gross_profit_loss, 6),
             "grossReturnPercent": round(100 * gross_profit_loss / realized_capital, 6)
             if realized_capital else None,
+            "entryFeesUsd": round(entry_fees, 6),
+            "exitFeesUsd": round(exit_fees, 6),
+            "costBufferUsd": round(cost_buffers, 6),
+            "executionCostsUsd": round(entry_fees + exit_fees + cost_buffers, 6),
+            "netProfitLossUsd": round(net_profit_loss, 6),
+            "netReturnPercent": round(100 * net_profit_loss / realized_capital, 6)
+            if realized_capital else None,
+            "costBasis": "configured" if contract.get("costsConfigured") else "zero-configured-costs",
             "contractPriceCents": contract.get("contractPriceCents") or contract.get("accessFeeCents"),
             "requiredExchangeCapitalCents": contract.get("requiredExchangeCapitalCents"),
             "rows": resolved_rows,
         })
-    reports.sort(key=lambda row: (int(row.get("maturedAtMs") or 0), int(row.get("accessDays") or 0)), reverse=True)
+    reports.sort(key=lambda row: (int(row.get("issuedAtMs") or 0), int(row.get("accessDays") or 0)), reverse=True)
+    available_count = len(reports)
+    reports = reports[:9]
     return {
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "generatedAtMs": now_ms,
         "matureContractCount": len(reports),
+        "verifiedContractCount": len(reports),
+        "availableVerifiedContractCount": available_count,
         "contracts": reports,
         "assumptions": {
             "positionSizing": "one full per-trade budget for every prediction; no capital reuse",
             "direction": "long when forecast is above entry and short when below entry",
             "valuation": "entry at recorded spot price and exit at authenticated actual target price",
-            "costs": "gross directional P&L only; exchange fees, funding, taxes, spread, slippage and bot hosting are excluded",
+            "costs": "net P&L subtracts stored entry fee, exit fee and execution-cost reserve; funding, borrow, taxes and bot hosting remain excluded",
+            "costWarning": "a zero-configured-costs batch has no stored fee or slippage reserve, so net equals gross and is not exchange-realistic",
             "unresolved": "unmatched outcomes are excluded from P&L and reported separately",
             "notice": "counterfactual historical simulation; not executed profit and not a promise of future performance",
         },

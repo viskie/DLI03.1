@@ -196,8 +196,55 @@ class StatusArtifactTests(unittest.TestCase):
         self.assertEqual(report['realizedCount'],2)
         self.assertEqual(report['unresolvedCount'],1)
         self.assertEqual(report['winningTrades'],2)
+        self.assertEqual(report['correctPredictions'],2)
+        self.assertEqual(report['wrongPredictions'],0)
         self.assertAlmostEqual(report['grossProfitLossUsd'],40.0)
         self.assertAlmostEqual(report['grossReturnPercent'],20.0)
+        self.assertAlmostEqual(report['netProfitLossUsd'],40.0)
+        self.assertEqual(report['costBasis'],'zero-configured-costs')
+
+    def test_verified_contract_simulation_subtracts_costs_and_limits_to_nine(self):
+        archive = Path(self.temporary.name) / 'verified-archive'
+        archive.mkdir()
+        key = Fernet.generate_key()
+        for index in range(11):
+            origin = 10_000 + index
+            target = 20_000 + index
+            contract_id = f'O961-{index}'
+            payload = {
+                'schemaVersion': 1,
+                'dailyContracts': {
+                    'issueDate': f'2026-10-{index + 1:02d}',
+                    'contracts': [{
+                        'contractId': contract_id, 'accessDays': 1,
+                        'issuedAtMs': 1_000 + index, 'accessUntilMs': 99_999,
+                        'perTradeCapitalUsd': 100.0, 'assetNotionalUsd': 98.0,
+                        'entryFeeBps': 10, 'exitFeeBps': 10,
+                        'costBufferUsd': 1.0, 'costsConfigured': True,
+                    }],
+                    'predictionBatches': {contract_id: [{
+                        'market': 'BTC/USDT', 'originAtMs': origin,
+                        'targetAtMs': target, 'spotPrice': 100.0,
+                        'predictedPrice': 110.0, 'direction': 'up',
+                    }]},
+                },
+                'predictionLogs': {'actualized': {'rows': [{
+                    'market': 'BTC/USDT', 'originAtMs': origin,
+                    'targetAtMs': target, 'actualPrice': 110.0,
+                    'directionCorrect': True, 'resolutionSource': 'live',
+                }]}},
+            }
+            (archive / f'{index:02d}.stat.i').write_bytes(encrypt_status(payload, key))
+        result = _matured_contract_simulations(archive, key, now_ms=30_000)
+        self.assertEqual(result['verifiedContractCount'], 9)
+        self.assertEqual(result['availableVerifiedContractCount'], 11)
+        self.assertEqual(result['contracts'][0]['contractId'], 'O961-10')
+        report = result['contracts'][0]
+        self.assertAlmostEqual(report['grossProfitLossUsd'], 9.8)
+        self.assertAlmostEqual(report['executionCostsUsd'], 1.2058)
+        self.assertAlmostEqual(report['netProfitLossUsd'], 8.5942)
+        self.assertEqual(report['correctPredictions'], 1)
+        self.assertEqual(report['wrongPredictions'], 0)
 
     def test_authenticated_round_trip_and_wrong_key(self):
         payload = build_status(self.instance, now_ms=3_600_000)
